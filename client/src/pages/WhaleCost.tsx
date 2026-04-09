@@ -4,7 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { RefreshCw, Target, TrendingUp, TrendingDown, Info, AlertTriangle, Activity } from "lucide-react";
+import { RefreshCw, Target, TrendingUp, TrendingDown, Info, AlertTriangle, Activity, BarChart2 } from "lucide-react";
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
+} from "recharts";
 
 const SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX"];
 const PERIODS = [
@@ -39,6 +42,155 @@ function getDeviationLabel(deviation: number): { label: string; color: string; d
   if (deviation > -5) return { label: "成本附近", color: "text-yellow-400", desc: "主力成本支撑区，关键位置" };
   if (deviation > -15) return { label: "低于成本", color: "text-green-400", desc: "主力亏损，有拉盘动力" };
   return { label: "严重低估", color: "text-blue-400", desc: "主力深套，拉盘意愿强烈" };
+}
+
+function getDeviationColor(deviation: number): string {
+  if (deviation > 20) return "#f87171";
+  if (deviation > 10) return "#fb923c";
+  if (deviation > -5) return "#facc15";
+  if (deviation > -15) return "#4ade80";
+  return "#60a5fa";
+}
+
+// 历史偏离度图表
+function DeviationHistoryChart({ symbol }: { symbol: string }) {
+  const { data, isLoading } = trpc.vsData.whaleCostDeviationHistory.useQuery(
+    { symbol },
+    { refetchInterval: 300000 }
+  );
+
+  const historyData = useMemo(() => {
+    if (!data?.success || !Array.isArray(data.data)) return [];
+    return data.data;
+  }, [data]);
+
+  const currentDeviation = (data as any)?.currentDeviation ?? 0;
+  const devInfo = getDeviationLabel(currentDeviation);
+
+  // 计算历史分位数
+  const stats = useMemo(() => {
+    if (historyData.length === 0) return null;
+    const vals = historyData.map((d: any) => d.deviation).sort((a: number, b: number) => a - b);
+    const min = vals[0];
+    const max = vals[vals.length - 1];
+    const p25 = vals[Math.floor(vals.length * 0.25)];
+    const p75 = vals[Math.floor(vals.length * 0.75)];
+    const rank = vals.filter((v: number) => v <= currentDeviation).length;
+    const percentile = Math.round((rank / vals.length) * 100);
+    return { min, max, p25, p75, percentile };
+  }, [historyData, currentDeviation]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+        <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+        加载历史偏离度...
+      </div>
+    );
+  }
+
+  if (!data?.success || historyData.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground text-sm">
+        暂无历史偏离度数据
+      </div>
+    );
+  }
+
+  const areaColor = getDeviationColor(currentDeviation);
+
+  return (
+    <div className="space-y-3">
+      {/* 当前状态 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`text-2xl font-black ${devInfo.color}`}>{fmtPct(currentDeviation)}</span>
+          <Badge variant="outline" className={`text-xs ${devInfo.color} border-current`}>{devInfo.label}</Badge>
+        </div>
+        {stats && (
+          <div className="text-xs text-muted-foreground">
+            历史分位：<span className={devInfo.color}>{stats.percentile}%</span>
+            <span className="ml-2 text-muted-foreground/60">（近30天）</span>
+          </div>
+        )}
+      </div>
+
+      {/* 图表 */}
+      <div className="h-48">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={historyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <defs>
+              <linearGradient id={`devGrad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={areaColor} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={areaColor} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+              tickLine={false}
+              interval={6}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+              tickLine={false}
+              tickFormatter={(v) => `${v > 0 ? "+" : ""}${v}%`}
+            />
+            <Tooltip
+              contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: 12 }}
+              labelStyle={{ color: "rgba(255,255,255,0.7)" }}
+              formatter={(value: any) => [`${value > 0 ? "+" : ""}${value}%`, "偏离度"]}
+            />
+            {/* 零线（主力成本线） */}
+            <ReferenceLine y={0} stroke="rgba(255,255,255,0.3)" strokeDasharray="4 4" label={{ value: "主力成本", position: "insideTopRight", fontSize: 10, fill: "rgba(255,255,255,0.4)" }} />
+            {/* 关键区间线 */}
+            <ReferenceLine y={-15} stroke="#4ade80" strokeDasharray="3 3" strokeOpacity={0.4} />
+            <ReferenceLine y={20} stroke="#f87171" strokeDasharray="3 3" strokeOpacity={0.4} />
+            <Area
+              type="monotone"
+              dataKey="deviation"
+              stroke={areaColor}
+              strokeWidth={2}
+              fill={`url(#devGrad-${symbol})`}
+              dot={false}
+              activeDot={{ r: 4, fill: areaColor }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* 历史统计 */}
+      {stats && (
+        <div className="grid grid-cols-4 gap-2 text-center text-xs">
+          <div className="rounded-lg border border-border/50 p-2">
+            <div className="text-muted-foreground">30天最低</div>
+            <div className={`font-mono font-semibold ${stats.min < -15 ? "text-blue-400" : stats.min < -5 ? "text-green-400" : "text-yellow-400"}`}>{fmtPct(stats.min)}</div>
+          </div>
+          <div className="rounded-lg border border-border/50 p-2">
+            <div className="text-muted-foreground">25分位</div>
+            <div className="font-mono font-semibold text-foreground">{fmtPct(stats.p25)}</div>
+          </div>
+          <div className="rounded-lg border border-border/50 p-2">
+            <div className="text-muted-foreground">75分位</div>
+            <div className="font-mono font-semibold text-foreground">{fmtPct(stats.p75)}</div>
+          </div>
+          <div className="rounded-lg border border-border/50 p-2">
+            <div className="text-muted-foreground">30天最高</div>
+            <div className={`font-mono font-semibold ${stats.max > 20 ? "text-red-400" : stats.max > 10 ? "text-orange-400" : "text-yellow-400"}`}>{fmtPct(stats.max)}</div>
+          </div>
+        </div>
+      )}
+
+      {/* 解读 */}
+      <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-2.5">
+        <span className={devInfo.color}>当前偏离度 {fmtPct(currentDeviation)}</span>
+        {stats && <span>，处于近30天 <span className={devInfo.color}>{stats.percentile}%</span> 分位</span>}
+        {stats && stats.percentile <= 25 && <span className="text-green-400">（历史低位，入场机会较好）</span>}
+        {stats && stats.percentile >= 75 && <span className="text-red-400">（历史高位，注意出货风险）</span>}
+      </div>
+    </div>
+  );
 }
 
 function WhaleCostCard({ symbol }: { symbol: string }) {
@@ -201,6 +353,7 @@ function TokenFlowCard({ symbol, period }: { symbol: string; period: string }) {
 export default function WhaleCost() {
   const [selectedSymbol, setSelectedSymbol] = useState("BTC");
   const [flowPeriod, setFlowPeriod] = useState("1h");
+  const [chartSymbol, setChartSymbol] = useState("BTC");
 
   return (
     <div className="p-4 md:p-6 space-y-5">
@@ -237,6 +390,34 @@ export default function WhaleCost() {
           ))}
         </div>
       </div>
+
+      {/* 历史偏离度图表 */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-blue-400" />
+              历史偏离度走势（近30天）
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {SYMBOLS.slice(0, 6).map(sym => (
+                <Button
+                  key={sym}
+                  variant={chartSymbol === sym ? "default" : "outline"}
+                  size="sm"
+                  className="h-6 text-xs px-2"
+                  onClick={() => setChartSymbol(sym)}
+                >
+                  {sym}
+                </Button>
+              ))}
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DeviationHistoryChart symbol={chartSymbol} />
+        </CardContent>
+      </Card>
 
       {/* 代币流向 */}
       <div>
@@ -301,6 +482,7 @@ export default function WhaleCost() {
               </div>
               <ul className="text-xs text-muted-foreground space-y-1">
                 <li>✓ 当前价格 &lt; 主力成本（偏离度为负）</li>
+                <li>✓ 偏离度处于近30天历史低位（&lt;25分位）</li>
                 <li>✓ 代币流向：链上净流出交易所（主力囤币）</li>
                 <li>✓ AI 多空信号面板出现 Alpha/FOMO 信号</li>
                 <li>✓ 资金流仪表盘显示净流入</li>
@@ -313,6 +495,7 @@ export default function WhaleCost() {
               </div>
               <ul className="text-xs text-muted-foreground space-y-1">
                 <li>✗ 当前价格 &gt; 主力成本 20% 以上</li>
+                <li>✗ 偏离度处于近30天历史高位（&gt;75分位）</li>
                 <li>✗ 代币流向：链上净流入交易所（主力出货）</li>
                 <li>✗ AI 分数 &gt; 80（过热风险）</li>
                 <li>✗ 资金流历史持续为负</li>

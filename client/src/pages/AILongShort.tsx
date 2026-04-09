@@ -50,6 +50,7 @@ function fmtMarketCap(v: number | string | undefined): string {
 export default function AILongShort() {
   const [signalType, setSignalType] = useState<"long" | "short">("long");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [filterAlphaFomo, setFilterAlphaFomo] = useState(false);
 
   const { data, isLoading, error, refetch } = trpc.vsData.aiLongShort.useQuery(
     { type: signalType },
@@ -59,11 +60,26 @@ export default function AILongShort() {
   // 同时获取恐惧贪婪指数
   const { data: fearGreed } = trpc.valueScan.fearGreed.useQuery(undefined, { refetchInterval: 300000 });
 
-  const items: any[] = useMemo(() => {
+  const allItems: any[] = useMemo(() => {
     if (!data?.success || !data.data) return [];
     if (Array.isArray(data.data)) return data.data;
     return [];
   }, [data]);
+
+  const items: any[] = useMemo(() => {
+    if (!filterAlphaFomo) return allItems;
+    return allItems.filter((item: any) => {
+      const isAlpha = item.keyword === 1 || item.isAlpha;
+      const isFomo = item.keyword === 2 || item.isFomo;
+      return isAlpha && isFomo;
+    });
+  }, [allItems, filterAlphaFomo]);
+
+  const alphaFomoCount = useMemo(() => allItems.filter((item: any) => {
+    const isAlpha = item.keyword === 1 || item.isAlpha;
+    const isFomo = item.keyword === 2 || item.isFomo;
+    return isAlpha && isFomo;
+  }).length, [allItems]);
 
   const handleRefresh = () => {
     refetch();
@@ -129,18 +145,43 @@ export default function AILongShort() {
         ))}
       </div>
 
-      {/* 多空切换 */}
+      {/* 多空切换 + Alpha+FOMO 筛选 */}
       <Tabs value={signalType} onValueChange={v => setSignalType(v as "long" | "short")}>
-        <TabsList className="grid w-full max-w-xs grid-cols-2">
-          <TabsTrigger value="long" className="flex items-center gap-1.5">
-            <TrendingUp className="w-4 h-4 text-green-400" />
-            多头流入预警
-          </TabsTrigger>
-          <TabsTrigger value="short" className="flex items-center gap-1.5">
-            <TrendingDown className="w-4 h-4 text-red-400" />
-            空头流出预警
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex items-center gap-3 flex-wrap">
+          <TabsList className="grid w-full max-w-xs grid-cols-2">
+            <TabsTrigger value="long" className="flex items-center gap-1.5">
+              <TrendingUp className="w-4 h-4 text-green-400" />
+              多头流入预警
+            </TabsTrigger>
+            <TabsTrigger value="short" className="flex items-center gap-1.5">
+              <TrendingDown className="w-4 h-4 text-red-400" />
+              空头流出预警
+            </TabsTrigger>
+          </TabsList>
+          <button
+            onClick={() => setFilterAlphaFomo(f => !f)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+              filterAlphaFomo
+                ? "bg-purple-500/20 border-purple-500/50 text-purple-300"
+                : "bg-background border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span>⚡️🔥</span>
+            <span>Alpha+FOMO 双标记筛选</span>
+            {alphaFomoCount > 0 && (
+              <span className={`ml-1 px-1.5 py-0.5 rounded text-xs ${
+                filterAlphaFomo ? "bg-purple-500/30 text-purple-200" : "bg-muted text-muted-foreground"
+              }`}>
+                {alphaFomoCount} 个
+              </span>
+            )}
+          </button>
+          {filterAlphaFomo && (
+            <span className="text-xs text-purple-400">
+              仅显示同时具有 ⚡ Alpha 和 🔥 FOMO 双标记的信号（共振最强）
+            </span>
+          )}
+        </div>
       </Tabs>
 
       {/* 数据表格 */}

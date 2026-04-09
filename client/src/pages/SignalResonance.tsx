@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { RefreshCw, Flame, Target, TrendingUp, TrendingDown, Zap, Star, AlertTriangle, CheckCircle2, XCircle, Clock, Rocket } from "lucide-react";
+import { RefreshCw, Flame, Target, TrendingUp, TrendingDown, Zap, Star, AlertTriangle, CheckCircle2, XCircle, Clock, Rocket, HelpCircle } from "lucide-react";
 
 /**
  * 信号共振增强引擎 v2
@@ -426,6 +426,7 @@ function ResonanceCard({ aiItem, fearGreedValue }: { aiItem: any; fearGreedValue
 
 export default function SignalResonance() {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showScoreInfo, setShowScoreInfo] = useState(false);
 
   const { data: aiData, isLoading: aiLoading, refetch } = trpc.vsData.aiLongShort.useQuery(
     { type: "long" },
@@ -470,12 +471,140 @@ export default function SignalResonance() {
               <span className="text-muted-foreground">{fearGreed.label}</span>
             </div>
           )}
+           <Button variant="outline" size="sm" onClick={() => setShowScoreInfo(true)}>
+            <HelpCircle className="w-4 h-4 mr-1.5" />
+            评分说明
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { refetch(); setRefreshKey(k => k + 1); }} disabled={aiLoading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${aiLoading ? "animate-spin" : ""}`} />
             刷新
           </Button>
         </div>
       </div>
+
+      {/* 评分说明弹窗 */}
+      <Dialog open={showScoreInfo} onOpenChange={setShowScoreInfo}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <HelpCircle className="w-5 h-5 text-orange-400" />
+              综合胜率评分详细说明
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">综合胜率评分满分 <strong className="text-foreground">100 分</strong>，由以下 7 个维度加权计算：</p>
+            {[
+              {
+                label: "1. AI 信号质量（满分 25 分）",
+                color: "text-yellow-400",
+                bg: "bg-yellow-500/10 border-yellow-500/30",
+                items: [
+                  { score: "25 分", cond: "Alpha + FOMO 双重共振", desc: "AI 检测到聰鱼异常活跃（Alpha）且市场 FOMO 情绪同时出现，最强共振信号" },
+                  { score: "20 分", cond: "Alpha 标记", desc: "聰鱼异常活跃，聰鱼在悲观时期静默建仓，中长期机会" },
+                  { score: "15 分", cond: "FOMO 标记", desc: "市场热情高涨，资金大量涌入，短期强烈信号" },
+                  { score: "6 分", cond: "无标记", desc: "普通信号，无特殊标记" },
+                  { score: "-8 分", cond: "AI 分数 > 80", desc: "识别出货风险：AI 分数过热，主力可能利用情绪出货" },
+                ],
+              },
+              {
+                label: "2. 主力成本偏离度（满分 20 分）",
+                color: "text-blue-400",
+                bg: "bg-blue-500/10 border-blue-500/30",
+                items: [
+                  { score: "20 分", cond: "主力深套 > -15%", desc: "主力严重亏损，拉盘动力最强，历史上必须拉盘自救" },
+                  { score: "16 分", cond: "主力亏损 -5% ~ -15%", desc: "主力亏损区间，有拉盘动力" },
+                  { score: "12 分", cond: "价格在主力成本附近 ±5%", desc: "主力成本支撑位，市场处于均衡区" },
+                  { score: "6 分", cond: "主力浮盈 5% ~ 15%", desc: "主力开始盈利，有减仓压力" },
+                  { score: "2 分", cond: "主力严重浮盈 > 15%", desc: "主力高度盈利，出货风险极高" },
+                ],
+              },
+              {
+                label: "3. 资金流方向（满分 20 分）",
+                color: "text-green-400",
+                bg: "bg-green-500/10 border-green-500/30",
+                items: [
+                  { score: "20 分", cond: "现货+合约双向净流入", desc: "现货和合约市场同时有资金净流入，主力积极建仓" },
+                  { score: "12 分", cond: "总体净流入", desc: "资金整体流入，市场善意" },
+                  { score: "4 分", cond: "净流出", desc: "资金流出，主力离场信号" },
+                ],
+              },
+              {
+                label: "4. OKX 多空比（满分 15 分）——逆向指标",
+                color: "text-cyan-400",
+                bg: "bg-cyan-500/10 border-cyan-500/30",
+                items: [
+                  { score: "15 分", cond: "多空比 < 0.8（空头过多）", desc: "逆向指标：空头过多时市场容易反弹，反弹信号强" },
+                  { score: "10 分", cond: "0.8 ≤ 多空比 < 0.95", desc: "空头偏多，小幅反弹信号" },
+                  { score: "8 分", cond: "0.95 ≤ 多空比 ≤ 1.1", desc: "多空平衡，中性状态" },
+                  { score: "5 分", cond: "1.1 < 多空比 ≤ 1.3", desc: "多头偏多，注意拥挤风险" },
+                  { score: "2 分", cond: "多空比 > 1.3（多头过多）", desc: "高拥挤风险，多头过多容易被踩蹏" },
+                  { score: "修正±3", cond: "Taker 主动买卖比", desc: "Taker主动买入比 > 1.1 加分，< 0.9 减分" },
+                ],
+              },
+              {
+                label: "5. 技术面评分（满分 10 分）",
+                color: "text-orange-400",
+                bg: "bg-orange-500/10 border-orange-500/30",
+                items: [
+                  { score: "+4 分", cond: "RSI < 30（超卖）", desc: "RSI 超卖区间，反弹信号强" },
+                  { score: "+2 分", cond: "RSI 30~45（偏低）", desc: "RSI 偏低，有一定反弹动力" },
+                  { score: "-2 分", cond: "RSI > 70（超买）", desc: "RSI 超买，注意回调风险" },
+                  { score: "+3 分", cond: "MACD 金叉", desc: "MACD 快线上穿慢线，向上动能" },
+                  { score: "-1 分", cond: "MACD 死叉", desc: "MACD 快线下穿慢线，向下压力" },
+                  { score: "+2 分", cond: "布林带下轨", desc: "价格触及布林带下轨，超卖反弹" },
+                  { score: "+2 分", cond: "EMA 多头排列", desc: "EMA 短期在长期上方，上升趋势" },
+                ],
+              },
+              {
+                label: "6. 市场情绪（满分 5 分）",
+                color: "text-purple-400",
+                bg: "bg-purple-500/10 border-purple-500/30",
+                items: [
+                  { score: "5 分", cond: "恐惧贪婪指数 25~75", desc: "市场情绪适中，最佳入场时机" },
+                  { score: "4 分", cond: "指数 < 25（极度恐惧）", desc: "恐惧时期逆向做多机会，历史胜率高" },
+                  { score: "1 分", cond: "指数 > 75（极度贪婪）", desc: "贪婪时期风险高，注意回调" },
+                ],
+              },
+              {
+                label: "7. 看涨情绪（满分 5 分）",
+                color: "text-pink-400",
+                bg: "bg-pink-500/10 border-pink-500/30",
+                items: [
+                  { score: "5 分", cond: "看涨情绪 ≥ 70%", desc: "强烈多头情绪，市场共识高涨" },
+                  { score: "3 分", cond: "55% ~ 70%", desc: "看涨情绪偏多，小幅利好" },
+                  { score: "2 分", cond: "45% ~ 55%", desc: "多空平衡，方向不明显" },
+                  { score: "1 分", cond: "< 45%", desc: "看涨情绪偏弱，注意下行风险" },
+                ],
+              },
+            ].map(dim => (
+              <div key={dim.label} className={`rounded-lg border p-3 space-y-2 ${dim.bg}`}>
+                <h4 className={`text-sm font-semibold ${dim.color}`}>{dim.label}</h4>
+                <div className="space-y-1">
+                  {dim.items.map((item, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      <span className={`font-mono font-bold flex-shrink-0 w-16 ${dim.color}`}>{item.score}</span>
+                      <span className="text-foreground font-medium flex-shrink-0 w-32">{item.cond}</span>
+                      <span className="text-muted-foreground">{item.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="rounded-lg border border-border/50 p-3 bg-accent/30">
+              <h4 className="text-sm font-semibold text-foreground mb-2">评分阈值与操作建议</h4>
+              <div className="space-y-1 text-xs">
+                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" /><span className="text-green-400 font-bold">≥ 75 分</span><span className="text-muted-foreground">强烈做多信号，多维度共振，建议入场，可开启自动交易</span></div>
+                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-400 flex-shrink-0" /><span className="text-yellow-400 font-bold">55~74 分</span><span className="text-muted-foreground">做多信号，可入场但需设好止损（建议 3~5%）</span></div>
+                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" /><span className="text-orange-400 font-bold">35~54 分</span><span className="text-muted-foreground">观望区间，不建议操作</span></div>
+                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" /><span className="text-red-400 font-bold">&lt; 35 分</span><span className="text-muted-foreground">做空信号或观望，建议减仓或空仓</span></div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowScoreInfo(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 评分说明 */}
       <Alert className="border-orange-500/30 bg-orange-500/5">

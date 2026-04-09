@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
   Settings as SettingsIcon, Bell, BarChart2, Send, RefreshCw,
   TvMinimal, Activity, Crown, Calendar, Mail, User, Eye,
-  Zap, TrendingUp, CheckCircle2, AlertCircle, WifiOff, Key, Lock, Shield
+  Zap, TrendingUp, CheckCircle2, AlertCircle, WifiOff, Key, Lock, Shield,
+  Wallet, TrendingDown, Info, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -111,7 +112,11 @@ export default function Settings() {
     onSuccess: (d) => d.success ? toast.success("✅ 测试消息发送成功！") : toast.error(`发送失败: ${d.error}`),
   });
   const saveConfigMutation = trpc.config.save.useMutation({
-    onSuccess: () => toast.success("币安 API Key 已保存"),
+    onSuccess: () => {
+      toast.success("币安 API Key 已保存，正在获取账户余额...");
+      setShowAccountDetail(true);
+      setTimeout(() => refetchBinanceAccount(), 500);
+    },
     onError: () => toast.error("保存失败"),
   });
   const saveFullExchangeMutation = trpc.exchange.saveFullExchangeConfig.useMutation({
@@ -122,6 +127,46 @@ export default function Settings() {
   // 测试连接 state
   const [testResults, setTestResults] = useState<Record<string, { loading: boolean; success?: boolean; message?: string }>>({});
   const utils = trpc.useUtils();
+
+  // 币安合约账户余额（配置成功后自动加载）
+  const [showAccountDetail, setShowAccountDetail] = useState(false);
+  const { data: binanceAccountDetail, refetch: refetchBinanceAccount, isLoading: accountDetailLoading } = trpc.exchange.binanceAccountDetail.useQuery(
+    undefined,
+    { enabled: showAccountDetail, refetchInterval: showAccountDetail ? 30000 : false }
+  );
+
+  // WebSocket 账户变动通知
+  const [wsNotifications, setWsNotifications] = useState<Array<{ id: number; type: 'balance' | 'position' | 'order'; message: string; time: string }>>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const prevBalanceRef = useRef<number | null>(null);
+
+  // 轮询账户余额变动（每30s对比，有变化时显示通知）
+  useEffect(() => {
+    if (!showAccountDetail) return;
+    const interval = setInterval(async () => {
+      try {
+        const result = await utils.exchange.binanceAccountDetail.fetch();
+        if (result?.success) {
+          const balance = result.totalWalletBalance;
+          if (prevBalanceRef.current !== null && Math.abs(balance - prevBalanceRef.current) > 0.01) {
+            const diff = balance - prevBalanceRef.current;
+            const sign = diff > 0 ? '+' : '';
+            const notif = {
+              id: Date.now(),
+              type: 'balance' as const,
+              message: `账户余额变动: ${sign}$${diff.toFixed(2)} USDT（当前: $${balance.toFixed(2)}）`,
+              time: new Date().toLocaleTimeString('zh-CN'),
+            };
+            setWsNotifications(prev => [notif, ...prev].slice(0, 10));
+            if (diff > 0) toast.success(`💰 余额增加 +$${diff.toFixed(2)}`);
+            else toast.error(`📉 余额减少 $${diff.toFixed(2)}`);
+          }
+          prevBalanceRef.current = balance;
+        }
+      } catch {}
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [showAccountDetail]);
 
   // 页面加载时静默检测所有已配置交易所的连通性
   useEffect(() => {
@@ -692,6 +737,107 @@ export default function Settings() {
               </div>
             </div>
           </div>
+
+          {/* 币安合约账户余额展示（配置成功后自动显示） */}
+          {binanceForm.apiKey && (
+            <div className="gradient-card rounded-xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-primary" />
+                  币安合约账户余额
+                </h3>
+                <div className="flex items-center gap-2">
+                  {!showAccountDetail ? (
+                    <Button variant="outline" size="sm" onClick={() => { setShowAccountDetail(true); refetchBinanceAccount(); }} className="text-xs h-7">
+                      <RefreshCw className="w-3 h-3 mr-1" />查看余额
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => refetchBinanceAccount()} disabled={accountDetailLoading} className="text-xs h-7">
+                      <RefreshCw className={cn("w-3 h-3 mr-1", accountDetailLoading && "animate-spin")} />刷新
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {showAccountDetail && (
+                accountDetailLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <RefreshCw className="w-4 h-4 animate-spin" />正在获取账户信息...
+                  </div>
+                ) : binanceAccountDetail?.success ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-background/50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">账户总余额</p>
+                        <p className="text-lg font-bold font-mono text-foreground">${binanceAccountDetail.totalWalletBalance.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">USDT</p>
+                      </div>
+                      <div className="bg-background/50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">可用余额</p>
+                        <p className="text-lg font-bold font-mono text-green-400">${binanceAccountDetail.availableBalance.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">USDT</p>
+                      </div>
+                      <div className="bg-background/50 rounded-lg p-3 text-center">
+                        <p className="text-xs text-muted-foreground mb-1">未实现盈亏</p>
+                        <p className={cn("text-lg font-bold font-mono", binanceAccountDetail.totalUnrealizedProfit >= 0 ? "text-green-400" : "text-red-400")}>
+                          {binanceAccountDetail.totalUnrealizedProfit >= 0 ? '+' : ''}${binanceAccountDetail.totalUnrealizedProfit.toFixed(2)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">USDT</p>
+                      </div>
+                    </div>
+                    {binanceAccountDetail.positions.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">当前持仓 ({binanceAccountDetail.positions.length} 个)</p>
+                        <div className="space-y-1.5">
+                          {binanceAccountDetail.positions.map((pos: any) => (
+                            <div key={pos.symbol} className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2 text-xs">
+                              <span className="font-mono font-medium text-foreground">{pos.symbol}</span>
+                              <span className={cn("font-mono", pos.positionAmt > 0 ? "text-green-400" : "text-red-400")}>
+                                {pos.positionAmt > 0 ? '多' : '空'} {Math.abs(pos.positionAmt).toFixed(4)}
+                              </span>
+                              <span className="text-muted-foreground">入场: ${pos.entryPrice.toFixed(4)}</span>
+                              <span className={cn("font-mono", pos.unRealizedProfit >= 0 ? "text-green-400" : "text-red-400")}>
+                                {pos.unRealizedProfit >= 0 ? '+' : ''}${pos.unRealizedProfit.toFixed(2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {binanceAccountDetail.positions.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">暂无持仓</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-red-400">
+                    <AlertCircle className="w-4 h-4" />{(binanceAccountDetail as any)?.error ?? '获取失败'}
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
+          {/* 实时账户变动通知 */}
+          {wsNotifications.length > 0 && (
+            <div className="gradient-card rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-primary" />
+                  账户变动通知
+                </h3>
+                <button onClick={() => setWsNotifications([])} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {wsNotifications.map(n => (
+                  <div key={n.id} className="flex items-start gap-2 text-xs bg-background/50 rounded-lg px-3 py-2">
+                    <span className="text-muted-foreground flex-shrink-0">{n.time}</span>
+                    <span className="text-foreground">{n.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 使用说明 */}
           <div className="gradient-card rounded-xl p-5 space-y-3">
