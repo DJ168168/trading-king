@@ -1,6 +1,7 @@
 /**
  * ValueScan 连接配置页面
  * - 服务端 API Key 认证（24小时稳定运行，无需用户操作）
+ * - 手动 API Key 配置（支持自定义 Key 并连接测试）
  * - 图文指引：如何获取 Token（地址栏/控制台/手机App）
  * - 实时状态指示器
  * - Token 过期弹窗提醒
@@ -10,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
@@ -32,14 +32,14 @@ import {
   Globe,
   Smartphone,
   Key,
-  Server,
   Shield,
   Zap,
-  Clock,
   ArrowRight,
   MousePointer,
   Monitor,
   ChevronRight,
+  Settings,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -139,7 +139,17 @@ export default function VSConnect() {
   const [showExpiredDialog, setShowExpiredDialog] = useState(false);
   const [expiredDismissed, setExpiredDismissed] = useState(false);
 
+  // 手动 API Key 配置状态
+  const [showApiKeyForm, setShowApiKeyForm] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [secretKeyInput, setSecretKeyInput] = useState("");
+  const [showApiKeyValue, setShowApiKeyValue] = useState(false);
+  const [showSecretKeyValue, setShowSecretKeyValue] = useState(false);
+
   // ── tRPC 查询 ──────────────────────────────────────────────
+  const { data: apiKeyConfig, refetch: refetchApiKeyConfig } = trpc.valueScan.getApiKeyConfig.useQuery(
+    undefined, { refetchInterval: 30000 }
+  );
   const { data: tokenStatus, isLoading: statusLoading, refetch: refetchStatus } = trpc.valueScan.tokenStatus.useQuery(
     undefined, { refetchInterval: 30000 }
   );
@@ -150,10 +160,37 @@ export default function VSConnect() {
     undefined, { refetchInterval: 60000 }
   );
 
+  // ── 手动 API Key mutations ─────────────────────────────────
+  const saveApiKeyMutation = trpc.valueScan.saveApiKey.useMutation({
+    onSuccess: () => {
+      toast.success("✅ ValueScan API Key 已保存！");
+      setApiKeyInput("");
+      setSecretKeyInput("");
+      setShowApiKeyForm(false);
+      refetchApiKeyConfig();
+    },
+    onError: (e) => toast.error("保存失败：" + e.message),
+  });
+
+  const testApiKeyMutation = trpc.valueScan.testApiKey.useMutation({
+    onSuccess: (data) => {
+      if (data.success) toast.success("✅ " + data.message);
+      else toast.error("❌ " + data.message);
+    },
+    onError: (e) => toast.error("连接测试失败：" + e.message),
+  });
+
+  const clearApiKeyMutation = trpc.valueScan.clearApiKey.useMutation({
+    onSuccess: () => {
+      toast.success("已清除手动 API Key，恢复使用系统默认 Key");
+      refetchApiKeyConfig();
+    },
+    onError: (e) => toast.error("清除失败：" + e.message),
+  });
+
   // ── Token 过期检测 ─────────────────────────────────────────
   useEffect(() => {
     if (!expiredDismissed && tokenStatus?.hasToken === false && !statusLoading) {
-      // 如果之前有 token 但现在没有（可能过期了），显示弹窗
       const hadToken = localStorage.getItem("vs_had_token");
       if (hadToken === "true") {
         setShowExpiredDialog(true);
@@ -182,7 +219,6 @@ export default function VSConnect() {
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // 降级方案
       const el = document.createElement("textarea");
       el.value = text;
       document.body.appendChild(el);
@@ -197,7 +233,6 @@ export default function VSConnect() {
 
   const apiKeyOk = !fearGreedLoading && fearGreed?.success !== false;
   const hasToken = tokenStatus?.hasToken ?? false;
-  const isAdmin = user?.role === "admin";
 
   const BOOKMARKLET = `javascript:prompt('ValueScan Token',localStorage.getItem('account_token'))`;
   const CONSOLE_CMD = `copy(localStorage.getItem('account_token'))`;
@@ -220,7 +255,7 @@ export default function VSConnect() {
           <p className="text-sm text-muted-foreground">服务端 24 小时稳定运行，无需浏览器保持在线</p>
         </div>
         <button
-          onClick={() => { refetchStatus(); toast.info("正在刷新状态..."); }}
+          onClick={() => { refetchStatus(); refetchApiKeyConfig(); toast.info("正在刷新状态..."); }}
           className="ml-auto p-2 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
           title="刷新状态"
         >
@@ -239,6 +274,12 @@ export default function VSConnect() {
             <div className="flex items-center gap-2 mb-2">
               <Key className="w-4 h-4 text-blue-400" />
               <span className="text-sm font-medium text-foreground">API Key</span>
+              <button
+                onClick={() => setShowApiKeyForm(!showApiKeyForm)}
+                className="ml-auto text-xs text-blue-400 hover:text-blue-300 underline flex-shrink-0"
+              >
+                {showApiKeyForm ? "收起" : "手动配置"}
+              </button>
             </div>
             <div className="flex items-center gap-1.5 mb-1">
               {fearGreedLoading ? (
@@ -251,6 +292,9 @@ export default function VSConnect() {
               <span className={`text-xs ${apiKeyOk ? "text-green-400" : fearGreedLoading ? "text-muted-foreground" : "text-red-400"}`}>
                 {fearGreedLoading ? "检测中..." : apiKeyOk ? "已连接" : "连接失败"}
               </span>
+              {apiKeyConfig?.usingDbKey && (
+                <span className="text-xs text-purple-400 ml-1">· 手动</span>
+              )}
             </div>
             <div className="text-xs text-muted-foreground space-y-0.5">
               <div className="flex items-center gap-1">
@@ -265,6 +309,11 @@ export default function VSConnect() {
                 <CheckCircle className="w-3 h-3 text-green-400/70" />
                 <span>机会/风险代币</span>
               </div>
+              {apiKeyConfig?.apiKeyPreview && (
+                <div className="font-mono text-xs text-purple-400/80 mt-1 truncate">
+                  {apiKeyConfig.apiKeyPreview}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -305,6 +354,123 @@ export default function VSConnect() {
         </Card>
       </div>
 
+      {/* ── 手动 API Key 配置表单 ─────────────────────────────── */}
+      {showApiKeyForm && (
+        <Card className="border-blue-500/30 bg-blue-500/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Settings className="w-4 h-4 text-blue-400" />
+              手动配置 ValueScan API Key
+              {apiKeyConfig?.usingDbKey && (
+                <Badge variant="outline" className="ml-auto text-xs border-purple-500/40 text-purple-400">已配置</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              手动配置后将覆盖系统默认 API Key，用于访问 ValueScan 数据接口。API Key 和 Secret Key 可在 ValueScan 账户设置中获取。
+            </p>
+
+            {/* API Key 输入 */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">API Key</label>
+              <div className="relative">
+                <Input
+                  type={showApiKeyValue ? "text" : "password"}
+                  placeholder="输入 ValueScan API Key..."
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  className="pr-10 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeyValue(!showApiKeyValue)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKeyValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Secret Key 输入 */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Secret Key</label>
+              <div className="relative">
+                <Input
+                  type={showSecretKeyValue ? "text" : "password"}
+                  placeholder="输入 ValueScan Secret Key..."
+                  value={secretKeyInput}
+                  onChange={(e) => setSecretKeyInput(e.target.value)}
+                  className="pr-10 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecretKeyValue(!showSecretKeyValue)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showSecretKeyValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                onClick={() => testApiKeyMutation.mutate({ apiKey: apiKeyInput || undefined, secretKey: secretKeyInput || undefined })}
+                disabled={testApiKeyMutation.isPending}
+                variant="outline"
+                className="gap-1.5 flex-1"
+              >
+                {testApiKeyMutation.isPending ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Zap className="w-4 h-4 text-yellow-400" />
+                )}
+                连接测试
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!apiKeyInput.trim() || !secretKeyInput.trim()) {
+                    toast.error("请填写 API Key 和 Secret Key");
+                    return;
+                  }
+                  saveApiKeyMutation.mutate({ apiKey: apiKeyInput.trim(), secretKey: secretKeyInput.trim() });
+                }}
+                disabled={saveApiKeyMutation.isPending}
+                className="gap-1.5 flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                {saveApiKeyMutation.isPending ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                保存
+              </Button>
+              {apiKeyConfig?.usingDbKey && (
+                <Button
+                  onClick={() => clearApiKeyMutation.mutate()}
+                  disabled={clearApiKeyMutation.isPending}
+                  variant="outline"
+                  className="gap-1.5 text-red-400 border-red-500/30 hover:bg-red-500/10"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  清除
+                </Button>
+              )}
+            </div>
+
+            {/* 已配置的 Key 预览 */}
+            {apiKeyConfig?.usingDbKey && apiKeyConfig.apiKeyPreview && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                <CheckCircle className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                <span className="text-xs text-purple-300">当前手动 Key：</span>
+                <span className="font-mono text-xs text-purple-400">{apiKeyConfig.apiKeyPreview}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── 恐惧贪婪指数 ─────────────────────────────────────── */}
       {fearGreed?.value !== undefined && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-card border border-border">
@@ -336,7 +502,8 @@ export default function VSConnect() {
               配置会员 Token
               {hasToken && <Badge variant="outline" className="ml-auto text-xs border-green-500/40 text-green-400">已配置</Badge>}
             </CardTitle>
-          </CardHeader>         <CardContent className="space-y-3">
+          </CardHeader>
+          <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
               Token 配置到服务端后，所有用户的实时预警信号将通过此 Token 获取。Token 有效期约 1 小时，过期后需重新配置。
             </p>
@@ -390,8 +557,7 @@ export default function VSConnect() {
             <TabsList className="w-full mb-4 grid grid-cols-3">
               <TabsTrigger value="url" className="text-xs gap-1">
                 <Globe className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">地址栏</span>
-                <span className="sm:hidden">地址栏</span>
+                <span>地址栏</span>
                 <Badge variant="secondary" className="ml-1 text-[10px] px-1 py-0 bg-green-500/20 text-green-400 border-0">推荐</Badge>
               </TabsTrigger>
               <TabsTrigger value="console" className="text-xs gap-1">
@@ -402,277 +568,164 @@ export default function VSConnect() {
               </TabsTrigger>
             </TabsList>
 
-            {/* ── 地址栏方法（推荐）─────────────────────────── */}
-            <TabsContent value="url" className="space-y-4">
-              <Alert className="border-green-500/30 bg-green-500/5 py-2">
-                <CheckCircle className="h-3.5 w-3.5 text-green-400" />
-                <AlertDescription className="text-xs text-green-300">
-                  此方法无需任何设置，所有浏览器均可使用，不受 Chrome 安全限制影响
-                </AlertDescription>
-              </Alert>
-
-              <div className="space-y-4">
-                <StepCard step={1} title="打开 ValueScan 网站并登录账号">
-                  <a
-                    href="https://www.valuescan.io"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 hover:underline mt-1"
-                  >
-                    <Globe className="w-3 h-3" />
-                    www.valuescan.io
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </StepCard>
-
-                <StepCard step={2} title="复制下方命令">
-                  <p className="text-xs text-muted-foreground mb-1">点击右侧复制按钮，或手动全选复制</p>
-                  <CodeBlock
-                    code={BOOKMARKLET}
-                    copyKey="bookmarklet"
-                    copiedStates={copiedStates}
-                    onCopy={handleCopy}
-                  />
-                </StepCard>
-
-                <StepCard step={3} title="粘贴到浏览器地址栏">
-                  <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3 space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Monitor className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>点击浏览器顶部地址栏（显示网址的地方）</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <MousePointer className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>粘贴命令（Ctrl+V 或 Cmd+V），然后按 <kbd className="bg-background border border-border rounded px-1 py-0.5 text-[10px]">Enter</kbd></span>
-                    </div>
-                    <Alert className="border-yellow-500/30 bg-yellow-500/5 py-1.5">
-                      <AlertTriangle className="h-3 w-3 text-yellow-400" />
-                      <AlertDescription className="text-[11px] text-yellow-300">
-                        注意：粘贴到<strong>地址栏</strong>，不是搜索框或页面上
-                      </AlertDescription>
-                    </Alert>
-                  </div>
-                </StepCard>
-
-                <StepCard step={4} title="从弹窗复制 Token">
-                  <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3 space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ChevronRight className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                      <span>浏览器会弹出一个对话框，里面显示你的 Token</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <ChevronRight className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                      <span>全选文本（Ctrl+A），复制（Ctrl+C）</span>
-                    </div>
-                  </div>
-                </StepCard>
-
-                <StepCard step={5} title="粘贴到上方「配置会员 Token」输入框">
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <ArrowRight className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
-                    <span>点击「配置」按钮，完成！服务端将自动使用此 Token 获取实时预警信号</span>
-                  </div>
-                </StepCard>
-              </div>
+            {/* 地址栏方法 */}
+            <TabsContent value="url" className="space-y-3 mt-0">
+              <StepCard step={1} title="打开 ValueScan 并登录">
+                <a
+                  href="https://valuescan.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                >
+                  valuescan.io <ExternalLink className="w-3 h-3" />
+                </a>
+              </StepCard>
+              <StepCard step={2} title="将书签拖到书签栏">
+                <p className="text-xs text-muted-foreground mb-2">将下方链接拖到浏览器书签栏，或复制后手动添加为书签</p>
+                <CodeBlock code={BOOKMARKLET} copyKey="bookmarklet" copiedStates={copiedStates} onCopy={handleCopy} />
+              </StepCard>
+              <StepCard step={3} title="在 ValueScan 页面点击书签">
+                <p className="text-xs text-muted-foreground">弹出框中会显示你的 Token，复制后粘贴到上方输入框</p>
+              </StepCard>
             </TabsContent>
 
-            {/* ── 控制台方法 ────────────────────────────────── */}
-            <TabsContent value="console" className="space-y-4">
-              <Alert className="border-yellow-500/30 bg-yellow-500/5 py-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-yellow-400" />
-                <AlertDescription className="text-xs text-yellow-300">
-                  Chrome 安全限制：首次使用需先在控制台输入 <code className="bg-black/30 px-1 rounded text-yellow-200">allow pasting</code> 解锁粘贴功能
-                </AlertDescription>
-              </Alert>
-
-              <div className="space-y-4">
-                <StepCard step={1} title="打开 ValueScan 网站并登录">
-                  <a href="https://www.valuescan.io" target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-blue-400 hover:underline mt-1">
-                    <Globe className="w-3 h-3" />www.valuescan.io<ExternalLink className="w-3 h-3" />
-                  </a>
-                </StepCard>
-
-                <StepCard step={2} title="打开浏览器开发者工具">
-                  <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <kbd className="bg-background border border-border rounded px-1.5 py-0.5 text-[11px]">F12</kbd>
-                      <span>或</span>
-                      <kbd className="bg-background border border-border rounded px-1.5 py-0.5 text-[11px]">Ctrl+Shift+I</kbd>
-                      <span>（Mac: Cmd+Option+I）</span>
-                    </div>
-                    <div>点击顶部 <strong className="text-foreground">Console</strong>（控制台）选项卡</div>
+            {/* 控制台方法 */}
+            <TabsContent value="console" className="space-y-3 mt-0">
+              <StepCard step={1} title="打开 ValueScan 并登录">
+                <a
+                  href="https://valuescan.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                >
+                  valuescan.io <ExternalLink className="w-3 h-3" />
+                </a>
+              </StepCard>
+              <StepCard step={2} title="打开浏览器开发者工具">
+                <div className="flex gap-2 mt-1">
+                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted text-xs">
+                    <Monitor className="w-3 h-3" />Windows: F12
                   </div>
-                </StepCard>
-
-                <StepCard step={3} title="解锁 Chrome 粘贴限制（仅首次需要）">
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    <p className="mb-1">在控制台输入以下内容并按回车：</p>
-                    <CodeBlock code="allow pasting" copyKey="allow" copiedStates={copiedStates} onCopy={handleCopy} />
-                    <p className="mt-1 text-yellow-400/80">⚠️ 这是手动输入，不能粘贴（Chrome 安全机制）</p>
+                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-muted text-xs">
+                    <Monitor className="w-3 h-3" />Mac: ⌘+⌥+I
                   </div>
-                </StepCard>
-
-                <StepCard step={4} title="复制 Token 到剪贴板">
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    <p className="mb-1">粘贴并运行以下命令（Token 会自动复制到剪贴板）：</p>
-                    <CodeBlock code={CONSOLE_CMD} copyKey="console" copiedStates={copiedStates} onCopy={handleCopy} />
-                    <p className="mt-2 mb-1">或者直接打印查看：</p>
-                    <CodeBlock code={CONSOLE_CMD2} copyKey="console2" copiedStates={copiedStates} onCopy={handleCopy} />
-                  </div>
-                </StepCard>
-
-                <StepCard step={5} title="粘贴到上方输入框并点击「配置」">
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <ArrowRight className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
-                    <span>Token 已在剪贴板，直接 Ctrl+V 粘贴即可</span>
-                  </div>
-                </StepCard>
-              </div>
+                </div>
+              </StepCard>
+              <StepCard step={3} title="切换到 Console 标签，输入命令">
+                <p className="text-xs text-muted-foreground mb-1">方法一（自动复制到剪贴板）：</p>
+                <CodeBlock code={CONSOLE_CMD} copyKey="console1" copiedStates={copiedStates} onCopy={handleCopy} />
+                <p className="text-xs text-muted-foreground mt-2 mb-1">方法二（打印到控制台）：</p>
+                <CodeBlock code={CONSOLE_CMD2} copyKey="console2" copiedStates={copiedStates} onCopy={handleCopy} />
+              </StepCard>
             </TabsContent>
 
-            {/* ── 手机 App 方法 ─────────────────────────────── */}
-            <TabsContent value="app" className="space-y-4">
-              <Alert className="border-blue-500/30 bg-blue-500/5 py-2">
-                <Info className="h-3.5 w-3.5 text-blue-400" />
-                <AlertDescription className="text-xs text-blue-300">
-                  需要安装 ValueScan 官方 App（iOS / Android）
-                </AlertDescription>
-              </Alert>
-
-              <div className="space-y-4">
-                <StepCard step={1} title="下载并安装 ValueScan App">
-                  <div className="mt-2 flex gap-2">
-                    <div className="flex-1 rounded-lg border border-border bg-muted/30 p-2 text-center text-xs text-muted-foreground">
-                      <div className="font-medium text-foreground mb-0.5">App Store</div>
-                      <div>搜索 ValueScan</div>
-                    </div>
-                    <div className="flex-1 rounded-lg border border-border bg-muted/30 p-2 text-center text-xs text-muted-foreground">
-                      <div className="font-medium text-foreground mb-0.5">Google Play</div>
-                      <div>搜索 ValueScan</div>
-                    </div>
-                  </div>
-                </StepCard>
-
-                <StepCard step={2} title="登录你的 ValueScan 账号">
-                  <p className="text-xs text-muted-foreground mt-1">使用邮箱/手机号登录</p>
-                </StepCard>
-
-                <StepCard step={3} title="进入 API 管理页面">
-                  <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                      <span>点击底部「<strong className="text-foreground">我的</strong>」标签</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                      <span>进入「<strong className="text-foreground">设置</strong>」</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                      <span>找到「<strong className="text-foreground">API 管理</strong>」或「<strong className="text-foreground">开发者设置</strong>」</span>
-                    </div>
-                  </div>
-                </StepCard>
-
-                <StepCard step={4} title="复制 Token">
-                  <p className="text-xs text-muted-foreground mt-1">点击 Token 旁边的复制图标，或长按选择复制</p>
-                </StepCard>
-
-                <StepCard step={5} title="在电脑上粘贴到输入框并配置">
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <ArrowRight className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
-                    <span>通过微信/邮件将 Token 发送到电脑，然后粘贴配置</span>
-                  </div>
-                </StepCard>
+            {/* 手机App方法 */}
+            <TabsContent value="app" className="space-y-3 mt-0">
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-yellow-300">手机App方式需要借助电脑浏览器，建议优先使用「地址栏」方法</p>
               </div>
+              <StepCard step={1} title="在手机上打开 ValueScan App 并登录">
+                <p className="text-xs text-muted-foreground">确保已登录你的 ValueScan 账号</p>
+              </StepCard>
+              <StepCard step={2} title="在电脑浏览器打开 ValueScan 并登录同一账号">
+                <a
+                  href="https://valuescan.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                >
+                  valuescan.io <ExternalLink className="w-3 h-3" />
+                </a>
+              </StepCard>
+              <StepCard step={3} title="按照「地址栏」或「控制台」方法获取 Token">
+                <p className="text-xs text-muted-foreground">两种方法获取的 Token 效果相同</p>
+              </StepCard>
             </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
-      {/* ── 服务端账户信息 ────────────────────────────────────── */}
-      {accountInfo?.data && (
+      {/* ── 账户信息（已连接时显示）─────────────────────────── */}
+      {accountInfo && (
         <Card className="border-border bg-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Server className="w-4 h-4 text-blue-400" />
-              <span className="text-sm font-semibold text-foreground">服务端连接信息</span>
-              <Badge variant="outline" className="ml-auto text-xs border-green-500/40 text-green-400">
-                <CheckCircle className="w-3 h-3 mr-1" />在线
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-muted-foreground">认证方式：</span>
-                <span className="text-foreground ml-1">HMAC-SHA256</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">API 状态：</span>
-                <span className="text-green-400 ml-1">{accountInfo.data.apiKeyConfigured ? "已配置" : "未配置"}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">更新频率：</span>
-                <span className="text-foreground ml-1">每 5 分钟</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">运行模式：</span>
-                <span className="text-foreground ml-1">24小时服务端</span>
-              </div>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="w-4 h-4 text-green-400" />
+              ValueScan 账户信息
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {(accountInfo as any).username && (
+                <div>
+                  <span className="text-muted-foreground text-xs">用户名</span>
+                  <p className="font-medium">{(accountInfo as any).username}</p>
+                </div>
+              )}
+              {(accountInfo as any).email && (
+                <div>
+                  <span className="text-muted-foreground text-xs">邮箱</span>
+                  <p className="font-medium">{(accountInfo as any).email}</p>
+                </div>
+              )}
+              {(accountInfo as any).plan && (
+                <div>
+                  <span className="text-muted-foreground text-xs">订阅计划</span>
+                  <p className="font-medium text-green-400">{(accountInfo as any).plan}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* ── Token 过期弹窗 ────────────────────────────────────── */}
-      <Dialog open={showExpiredDialog} onOpenChange={setShowExpiredDialog}>
-        <DialogContent className="max-w-md">
+      <Dialog open={showExpiredDialog} onOpenChange={(open) => {
+        if (!open) setExpiredDismissed(true);
+        setShowExpiredDialog(open);
+      }}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-yellow-400">
-              <Clock className="w-5 h-5" />
-              Token 已过期，需要重新配置
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-400" />
+              ValueScan Token 已过期
             </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              ValueScan Token 有效期约 1 小时，当前 Token 已失效。实时预警信号已暂停，请重新获取并配置 Token。
+            <DialogDescription>
+              你的 ValueScan Token 已过期（有效期约 1 小时）。请重新获取 Token 并配置，以继续接收实时预警信号。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <Alert className="border-blue-500/30 bg-blue-500/5">
-              <Info className="h-4 w-4 text-blue-400" />
-              <AlertDescription className="text-sm text-blue-300">
-                <strong>快速重新获取：</strong>打开 valuescan.io，将以下命令粘贴到地址栏：
-              </AlertDescription>
-            </Alert>
-            <CodeBlock code={BOOKMARKLET} copyKey="dialog_bookmarklet" copiedStates={copiedStates} onCopy={handleCopy} />
-            {isAdmin && (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">获取 Token 后，粘贴到下方：</p>
-                <div className="flex gap-2">
-                  <Input
-                    type="password"
-                    placeholder="粘贴新 Token..."
-                    value={tokenInput}
-                    onChange={(e) => setTokenInput(e.target.value)}
-                    className="font-mono text-xs"
-                  />
-                  <Button
-                    onClick={() => tokenInput.trim() && setTokenMutation.mutate({ token: tokenInput.trim() })}
-                    disabled={!tokenInput.trim() || setTokenMutation.isPending}
-                    size="sm"
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {setTokenMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : "配置"}
-                  </Button>
-                </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showToken ? "text" : "password"}
+                  placeholder="粘贴新的 ValueScan token..."
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  className="pr-10 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
-            )}
+            </div>
           </div>
           <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowExpiredDialog(false); setExpiredDismissed(true); }}>
+              稍后处理
+            </Button>
             <Button
-              variant="outline"
-              onClick={() => { setShowExpiredDialog(false); setExpiredDismissed(true); }}
+              onClick={() => tokenInput.trim() && setTokenMutation.mutate({ token: tokenInput.trim() })}
+              disabled={!tokenInput.trim() || setTokenMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700"
             >
-              稍后配置
+              {setTokenMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : null}
+              立即更新
             </Button>
           </DialogFooter>
         </DialogContent>

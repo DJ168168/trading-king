@@ -755,9 +755,48 @@ export const appRouter = router({
         ...val,
       }));
     }),
+    // ── 手动 API Key 管理 ────────────────────────────────────────────────
+    getApiKeyConfig: publicProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      const vsKey = (cfg as any)?.vsApiKey as string | undefined;
+      return {
+        usingDbKey: !!vsKey,
+        apiKeyPreview: vsKey ? `${vsKey.slice(0, 8)}...` : null,
+      };
+    }),
+    saveApiKey: publicProcedure
+      .input(z.object({ apiKey: z.string().min(10), secretKey: z.string().min(10) }))
+      .mutation(async ({ input }) => {
+        const cfg = await getActiveConfig();
+        if (!cfg) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '未找到配置' });
+        await updateStrategyConfig(cfg.id, { vsApiKey: input.apiKey, vsSecretKey: input.secretKey } as any);
+        return { success: true };
+      }),
+    testApiKey: publicProcedure
+      .input(z.object({ apiKey: z.string().optional(), secretKey: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        try {
+          const cfg = await getActiveConfig();
+          const apiKey = input.apiKey || (cfg as any)?.vsApiKey || process.env.VALUESCAN_API_KEY;
+          const secretKey = input.secretKey || (cfg as any)?.vsSecretKey || process.env.VALUESCAN_SECRET_KEY || '';
+          if (!apiKey) return { success: false, message: '未配置 API Key' };
+          const res = await fetch('https://api.valuescan.io/api/v1/market/fear-greed', {
+            headers: { 'X-API-KEY': apiKey, 'X-SECRET-KEY': secretKey },
+          });
+          if (res.ok) return { success: true, message: `API Key 有效！连接成功 (HTTP ${res.status})` };
+          return { success: false, message: `连接失败 (HTTP ${res.status})，请检查 API Key` };
+        } catch (e: any) {
+          return { success: false, message: '网络错误: ' + e.message };
+        }
+      }),
+    clearApiKey: publicProcedure.mutation(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '未找到配置' });
+      await updateStrategyConfig(cfg.id, { vsApiKey: null, vsSecretKey: null } as any);
+      return { success: true };
+    }),
   }),
-
-  // ─── 市场价格（通过 Binance 公开 API）─────────────────────────────────────
+  // ─── 市场价格（通过 Binance 公开 API））─────────────────────────────────────
   market: router({
     price: publicProcedure
       .input(z.object({ symbol: z.string() }))
