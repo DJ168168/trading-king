@@ -153,6 +153,11 @@ export const strategyConfig = mysqlTable("strategy_config", {
   // ValueScan 用户 Token（用于 warnMessage 接口）
   vsUserToken: varchar("vsUserToken", { length: 2048 }).default(""),
   vsTokenSetAt: bigint("vsTokenSetAt", { mode: "number" }).default(0),
+  // ValueScan 自动登录凭证（用于自动刷新 Token）
+  vsLoginEmail: varchar("vsLoginEmail", { length: 256 }).default(""),
+  vsLoginPassword: varchar("vsLoginPassword", { length: 256 }).default(""),
+  vsRefreshToken: varchar("vsRefreshToken", { length: 2048 }).default(""),
+  vsAutoRefreshEnabled: boolean("vsAutoRefreshEnabled").default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

@@ -24,7 +24,9 @@ import {
   getFundsCoinList, getChanceCoinList, getRiskCoinList,
   getTokenList, getCoinSocialSentiment,
   getWarnMessageWithToken,
+  loginValueScan, startAutoRefreshTimer, stopAutoRefreshTimer,
 } from "./valueScanService";
+import { saveVSLoginCredentials, loadVSLoginCredentials } from "./db";
 import { getNewsSentiment, getCoinNewsSentiment } from "./newsService";
 import { TRPCError } from "@trpc/server";
 import { getMarketOverview, getMultiFundingRates, getMultiOpenInterest, getMultiLongShortRatio } from "./coinGlassService";
@@ -584,6 +586,48 @@ export const appRouter = router({
         await setVSToken(input.token);
         return { success: true, message: "Token 已配置并持久化到数据库，服务重启后自动恢复" };
       }),
+    // VS 自动登录（通过账号密码登录获取 Token）
+    autoLogin: protectedProcedure
+      .input(z.object({
+        email: z.string().email(),
+        password: z.string().min(6),
+        enableAutoRefresh: z.boolean().default(true),
+      }))
+      .mutation(async ({ input }) => {
+        const result = await loginValueScan(input.email, input.password);
+        if (!result.success || !result.token) {
+          return { success: false, message: result.msg || '登录失败' };
+        }
+        // 保存 Token
+        await setVSToken(result.token);
+        // 保存登录凭证到数据库
+        await saveVSLoginCredentials(input.email, input.password, '', input.enableAutoRefresh);
+        // 如果开启了自动刷新，启动定时器
+        if (input.enableAutoRefresh) {
+          startAutoRefreshTimer(input.email, input.password);
+        } else {
+          stopAutoRefreshTimer();
+        }
+        return { success: true, message: `登录成功！Token 已获取并保存${input.enableAutoRefresh ? '，已开启 50 分钟自动刷新' : ''}` };
+      }),
+    // 获取自动登录配置状态
+    autoLoginStatus: publicProcedure.query(async () => {
+      const creds = await loadVSLoginCredentials();
+      return {
+        hasCredentials: !!(creds?.email && creds?.password),
+        email: creds?.email ? `${creds.email.slice(0, 3)}***${creds.email.slice(-8)}` : null,
+        autoRefreshEnabled: creds?.autoRefreshEnabled ?? false,
+      };
+    }),
+    // 停止自动刷新
+    stopAutoRefresh: protectedProcedure.mutation(async () => {
+      stopAutoRefreshTimer();
+      const creds = await loadVSLoginCredentials();
+      if (creds) {
+        await saveVSLoginCredentials(creds.email, creds.password, creds.refreshToken, false);
+      }
+      return { success: true, message: '已停止自动刷新' };
+    }),
 
     // 获取 Token 状态（如果内存中没有，先从数据库加载）
     tokenStatus: publicProcedure.query(async () => {

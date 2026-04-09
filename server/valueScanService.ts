@@ -10,8 +10,31 @@
  * Base URL: https://api.valuescan.io/api/open/v1
  */
 import axios from "axios";
-import { createHmac } from "crypto";
+import { createHmac, createCipheriv } from "crypto";
 import { ENV } from "./_core/env";
+
+const VS_ACCOUNT_BASE_URL = "https://api.valuescan.io/api";
+const VS_TICKET_AES_KEY = "BxlAG1lX9daAAHgj";
+
+/** 获取 ticket 并用 AES-ECB 加密，生成 Access-Ticket 请求头 */
+async function getAccessTicket(token: string): Promise<string> {
+  const resp = await axios.get(`${VS_ACCOUNT_BASE_URL}/ticket/getTicket`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Origin: "https://www.valuescan.io",
+      Referer: "https://www.valuescan.io/",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    },
+    timeout: 10000,
+  });
+  const ticket: string = resp.data?.data || "";
+  if (!ticket) throw new Error("getTicket returned empty");
+  // AES-128-ECB encrypt with PKCS7 padding
+  const key = Buffer.from(VS_TICKET_AES_KEY, "utf8");
+  const cipher = createCipheriv("aes-128-ecb", key, null);
+  const encrypted = Buffer.concat([cipher.update(ticket, "utf8"), cipher.final()]);
+  return encrypted.toString("base64");
+}
 
 const VS_BASE_URL = "https://api.valuescan.io/api/open/v1";
 
@@ -346,24 +369,163 @@ export async function getFearGreedIndex(): Promise<VSFearGreedResponse> {
 
 // ==================== 用户 Token 管理（内存 + 数据库双层存储）====================
 
-import { saveVSToken as dbSaveVSToken, loadVSToken as dbLoadVSToken } from './db';
+import { saveVSToken as dbSaveVSToken, loadVSToken as dbLoadVSToken, saveVSLoginCredentials, loadVSLoginCredentials } from './db';
 
-/** 内存中存储的用户 Token（快速读取） */
-let _vsUserToken: string | null = process.env.VALUESCAN_USER_TOKEN || null;
+/** 内存中存储的用户 Token（快速读取）- 优先读取 VALUESCAN_TOKEN 环境变量 */
+let _vsUserToken: string | null = process.env.VALUESCAN_TOKEN || process.env.VALUESCAN_USER_TOKEN || null;
 let _vsUserTokenSetAt: number = _vsUserToken ? Date.now() : 0;
 let _tokenLoaded = false;
+let _autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 通过账号密码登录 ValueScan 获取新 Token */
+export async function loginValueScan(email: string, password: string): Promise<{ success: boolean; token?: string; msg: string }> {
+  const commonHeaders = {
+    'Content-Type': 'application/json',
+    'Origin': 'https://www.valuescan.io',
+    'Referer': 'https://www.valuescan.io/',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  };
+
+  // 尝试多个登录接口和密码格式
+  const attempts = [
+    // 接口1: authority/login（浏览器实际使用的接口）
+    { url: 'https://api.valuescan.io/api/authority/login', body: { account: email, password, loginType: 1 } },
+    // 接口2: open/v1/user/login 带 timestamp
+    { url: 'https://api.valuescan.io/api/open/v1/user/login', body: { account: email, password, loginType: 1, timestamp: Date.now() } },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const resp = await axios.post(attempt.url, attempt.body, {
+        headers: commonHeaders,
+        timeout: 15000
+      });
+      const data = resp.data;
+      if (data.code === 200 && data.data) {
+        const token = data.data.accountToken || data.data.token || data.data.accessToken || data.data.skToken;
+        if (token) {
+          console.log(`[ValueScan] Login successful via ${attempt.url}`);
+          return { success: true, token, msg: '登录成功' };
+        }
+        // 返回完整数据供调试
+        console.log('[ValueScan] Login OK but no token, data keys:', Object.keys(data.data || {}).join(', '));
+      } else {
+        console.log(`[ValueScan] Login failed via ${attempt.url}: code=${data.code}, msg=${data.msg || data.message}`);
+      }
+    } catch (e: any) {
+      console.error(`[ValueScan] Login error via ${attempt.url}:`, e.message);
+    }
+  }
+  return { success: false, msg: '所有登录方式均失败，请检查账号密码或手动在 VS 连接页面设置 Token' };
+}
+
+/** 通过 refresh_token 获取新的 account_token */
+export async function refreshVSToken(refreshToken: string): Promise<{ success: boolean; token?: string; newRefreshToken?: string; msg: string }> {
+  const endpoints = [
+    'https://api.valuescan.io/api/authority/refreshToken',
+    'https://api.valuescan.io/api/authority/refresh',
+  ];
+  for (const url of endpoints) {
+    try {
+      const resp = await axios.post(url, { refreshToken }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Origin': 'https://www.valuescan.io',
+          'Referer': 'https://www.valuescan.io/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        timeout: 15000
+      });
+      const data = resp.data;
+      if (data.code === 200 && data.data) {
+        const token = data.data.accountToken || data.data.token || data.data.accessToken;
+        const newRefresh = data.data.refreshToken;
+        if (token) {
+          console.log(`[ValueScan] Token refreshed via ${url}`);
+          return { success: true, token, newRefreshToken: newRefresh, msg: '刷新成功' };
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[ValueScan] Refresh failed via ${url}:`, e.message);
+    }
+  }
+  return { success: false, msg: 'refresh_token 已失效，需要重新登录' };
+}
+
+/** 启动自动刷新 Token 定时器（50分钟刷新一次） */
+export function startAutoRefreshTimer(email: string, password: string): void {
+  if (_autoRefreshTimer) {
+    clearInterval(_autoRefreshTimer);
+    _autoRefreshTimer = null;
+  }
+  _autoRefreshTimer = setInterval(async () => {
+    console.log('[ValueScan] Auto-refreshing token...');
+    // 先尝试用 refresh_token 刷新
+    const creds = await loadVSLoginCredentials();
+    if (creds && creds.refreshToken) {
+      const refreshResult = await refreshVSToken(creds.refreshToken);
+      if (refreshResult.success && refreshResult.token) {
+        await setVSToken(refreshResult.token);
+        // 如果有新的 refresh_token，保存它
+        if (refreshResult.newRefreshToken) {
+          await saveVSLoginCredentials(email, password, refreshResult.newRefreshToken, true);
+        }
+        console.log('[ValueScan] Token auto-refreshed via refresh_token');
+        return;
+      }
+    }
+    // refresh_token 失效，尝试重新登录
+    const result = await loginValueScan(email, password);
+    if (result.success && result.token) {
+      await setVSToken(result.token);
+      console.log('[ValueScan] Token auto-refreshed via login');
+    } else {
+      console.warn('[ValueScan] Auto-refresh failed:', result.msg);
+    }
+  }, 50 * 60 * 1000); // 50分钟刷新一次
+  console.log(`[ValueScan] Auto-refresh timer started for ${email}, interval: 50min`);
+}
+
+/** 停止自动刷新定时器 */
+export function stopAutoRefreshTimer(): void {
+  if (_autoRefreshTimer) {
+    clearInterval(_autoRefreshTimer);
+    _autoRefreshTimer = null;
+    console.log('[ValueScan] Auto-refresh timer stopped');
+  }
+}
 
 /** 启动时从数据库加载 Token（如果内存中没有） */
 export async function initVSTokenFromDB(): Promise<void> {
   if (_tokenLoaded) return;
   _tokenLoaded = true;
-  if (_vsUserToken) return; // 环境变量优先
   try {
-    const saved = await dbLoadVSToken();
-    if (saved && saved.token) {
-      _vsUserToken = saved.token;
-      _vsUserTokenSetAt = saved.setAt;
-      console.log(`[ValueScan] Token loaded from DB, set at ${new Date(saved.setAt).toISOString()}`);
+    // 加载自动登录凭证
+    const creds = await loadVSLoginCredentials();
+    if (creds && creds.email && creds.password && creds.autoRefreshEnabled) {
+      // 如果开启了自动登录，先尝试登录获取新 Token
+      const tokenAge = _vsUserToken ? (Date.now() - (_vsUserTokenSetAt || 0)) : Infinity;
+      if (tokenAge > 45 * 60 * 1000 || !_vsUserToken) {
+        console.log('[ValueScan] Token expired or missing, auto-logging in...');
+        const result = await loginValueScan(creds.email, creds.password);
+        if (result.success && result.token) {
+          _vsUserToken = result.token;
+          _vsUserTokenSetAt = Date.now();
+          await dbSaveVSToken(result.token);
+          console.log('[ValueScan] Auto-login successful on startup');
+        }
+      }
+      startAutoRefreshTimer(creds.email, creds.password);
+      return;
+    }
+    // 如果没有自动登录凭证，从数据库加载 Token
+    if (!_vsUserToken) {
+      const saved = await dbLoadVSToken();
+      if (saved && saved.token) {
+        _vsUserToken = saved.token;
+        _vsUserTokenSetAt = saved.setAt;
+        console.log(`[ValueScan] Token loaded from DB, set at ${new Date(saved.setAt).toISOString()}`);
+      }
     }
   } catch (e) {
     console.warn('[ValueScan] Failed to load token from DB:', e);
@@ -410,20 +572,29 @@ export function getVSTokenStatus(): { configured: boolean; apiKeyOk: boolean; ha
  * 接口路径: /api/open/v1/ai/getWarnMessage
  * 认证方式: Authorization: Bearer {token}（不是 HMAC 签名）
  */
-export async function getWarnMessageWithToken(pageNum = 1, pageSize = 20): Promise<{ code: number; data: any[]; msg: string; expired?: boolean }> {
+export async function getWarnMessageWithToken(pageNum = 1, pageSize = 20): Promise<{ code: number; data: any[]; msg: string; total?: number; expired?: boolean }> {
   const token = _vsUserToken;
   if (!token) {
     return { code: 4001, data: [], msg: "未配置用户 Token，请在 VS 连接页面配置" };
   }
-
   try {
+    // Step 1: 获取 ticket 并加密为 Access-Ticket
+    let accessTicket: string;
+    try {
+      accessTicket = await getAccessTicket(token);
+    } catch (ticketErr: any) {
+      console.warn(`[ValueScan] Failed to get ticket: ${ticketErr.message}, trying without ticket`);
+      accessTicket = "";
+    }
+    // Step 2: 调用预警信号接口（使用正确的路径）
     const response = await axios.post(
-      `${VS_BASE_URL}/ai/getWarnMessage`,
+      `${VS_ACCOUNT_BASE_URL}/account/message/getWarnMessage`,
       { pageNum, pageSize },
       {
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/json;charset=UTF-8",
           "Authorization": `Bearer ${token}`,
+          ...(accessTicket ? { "Access-Ticket": accessTicket } : {}),
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           "Origin": "https://www.valuescan.io",
           "Referer": "https://www.valuescan.io/",
@@ -432,16 +603,21 @@ export async function getWarnMessageWithToken(pageNum = 1, pageSize = 20): Promi
       }
     );
     const data = response.data;
-    if (data.code === 4000) {
-      // Token 过期，清除内存和数据库
+    if (data.code === 4000 || data.code === 401) {
       console.warn(`[ValueScan] User token expired, clearing token`);
       _vsUserToken = null;
       _vsUserTokenSetAt = 0;
-      dbSaveVSToken('').catch(() => {}); // 异步清除数据库中的 Token
+      dbSaveVSToken('').catch(() => {});
       return { code: 4000, data: [], msg: "Token 已过期，请重新配置", expired: true };
     }
     if (data.code === 200 || data.code === 0) {
-      return { code: 200, data: data.data || [], msg: "success" };
+      const records = data.data?.records || data.data || [];
+      const total = data.data?.total || records.length;
+      return { code: 200, data: Array.isArray(records) ? records : [], msg: "success", total };
+    }
+    // 9999 通常是权限不足（非SVIP）
+    if (data.code === 9999) {
+      return { code: 9999, data: [], msg: "需要 SVIP 会员权限才能访问实时预警信号" };
     }
     return { code: data.code, data: [], msg: data.msg || "error" };
   } catch (e: any) {

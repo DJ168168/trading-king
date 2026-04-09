@@ -58,3 +58,13 @@
 
 ## Bug修复
 - [x] 修复CSS @import顺序问题 (Google Fonts移至index.html)
+
+## API 配置
+- [x] 配置 ValueScan account_token (已写入数据库)
+- [x] 配置 ValueScan API Key/Secret (HMAC-SHA256 签名)
+- [x] 配置 Binance API Key/Secret
+- [x] 配置 OKX API Key/Secret
+- [x] 配置 Telegram Bot Token + Chat ID
+- [x] 实现 ValueScan ticket+AES 认证 (Access-Ticket)
+- [x] 实现 ValueScan 自动刷新 Token (每50分钟)
+- [x] 预警信号接口测试通过 (返回实时信号数据)

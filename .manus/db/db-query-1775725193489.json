@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `strategy_config` ADD `vsLoginEmail` varchar(256) DEFAULT '';\nALTER TABLE `strategy_config` ADD `vsLoginPassword` varchar(256) DEFAULT '';\nALTER TABLE `strategy_config` ADD `vsRefreshToken` varchar(2048) DEFAULT '';\nALTER TABLE `strategy_config` ADD `vsAutoRefreshEnabled` boolean DEFAULT false;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user T2V9bjaWYfFt4Mr.root --database ZMqrPqR5JTAQoHvXkBDoDE --execute ALTER TABLE `strategy_config` ADD `vsLoginEmail` varchar(256) DEFAULT '';\nALTER TABLE `strategy_config` ADD `vsLoginPassword` varchar(256) DEFAULT '';\nALTER TABLE `strategy_config` ADD `vsRefreshToken` varchar(2048) DEFAULT '';\nALTER TABLE `strategy_config` ADD `vsAutoRefreshEnabled` boolean DEFAULT false;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 3005
+}

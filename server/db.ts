@@ -230,7 +230,41 @@ export async function loadVSToken(): Promise<{ token: string; setAt: number } | 
   return { token: config.vsUserToken, setAt: config.vsTokenSetAt ?? 0 };
 }
 
-// ─── Account Snapshots ────────────────────────────────────────────────────────
+/** 保存 VS 自动登录凭证和 Refresh Token */
+export async function saveVSLoginCredentials(email: string, password: string, refreshToken: string, autoRefreshEnabled: boolean): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const config = await getActiveConfig();
+  if (config) {
+    await db.update(strategyConfig)
+      .set({ vsLoginEmail: email, vsLoginPassword: password, vsRefreshToken: refreshToken, vsAutoRefreshEnabled: autoRefreshEnabled, updatedAt: new Date() })
+      .where(eq(strategyConfig.id, config.id));
+  } else {
+    await db.insert(strategyConfig).values({
+      name: 'default',
+      vsLoginEmail: email,
+      vsLoginPassword: password,
+      vsRefreshToken: refreshToken,
+      vsAutoRefreshEnabled: autoRefreshEnabled,
+    }).onDuplicateKeyUpdate({ set: { vsLoginEmail: email, vsLoginPassword: password, vsRefreshToken: refreshToken, vsAutoRefreshEnabled: autoRefreshEnabled, updatedAt: new Date() } });
+  }
+}
+
+/** 加载 VS 自动登录凭证 */
+export async function loadVSLoginCredentials(): Promise<{ email: string; password: string; refreshToken: string; autoRefreshEnabled: boolean } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const config = await getActiveConfig();
+  if (!config) return null;
+  return {
+    email: config.vsLoginEmail ?? '',
+    password: config.vsLoginPassword ?? '',
+    refreshToken: config.vsRefreshToken ?? '',
+    autoRefreshEnabled: config.vsAutoRefreshEnabled ?? false,
+  };
+}
+
+// ─── Account Snapshots ─────────────────────────────────────────────────────────────────────────────────────
 export async function insertAccountSnapshot(data: { totalBalance: number; availableBalance: number; unrealizedPnl?: number; dailyPnl?: number; dailyTrades?: number; positionCount?: number }) {
   const db = await getDb();
   if (!db) return;
