@@ -1,128 +1,160 @@
+import { trpc } from "@/lib/trpc";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
-import { toast } from "sonner";
+import { RefreshCw, Globe, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useState } from "react";
 
-const fundingRates = [
-  { symbol: "BTC", rate: "+0.0100%", oi: "$18.2B", change: "+2.3%", price: "$71,899" },
-  { symbol: "ETH", rate: "+0.0075%", oi: "$8.5B", change: "+1.8%", price: "$2,212" },
-  { symbol: "SOL", rate: "+0.0120%", oi: "$2.1B", change: "+3.1%", price: "$83.81" },
-  { symbol: "BNB", rate: "+0.0050%", oi: "$1.2B", change: "+0.9%", price: "$608.41" },
-  { symbol: "XRP", rate: "+0.0080%", oi: "$0.8B", change: "+1.5%", price: "$1.3537" },
-  { symbol: "DOGE", rate: "+0.0200%", oi: "$0.5B", change: "+4.2%", price: "$0.0933" },
-  { symbol: "ADA", rate: "+0.0060%", oi: "$0.4B", change: "+1.2%", price: "$0.2551" },
-  { symbol: "AVAX", rate: "+0.0090%", oi: "$0.3B", change: "+2.0%", price: "$9.31" },
-];
+const SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT", "AVAX/USDT"];
+const TABS = ["行情总览", "资金费率", "持仓量"];
 
-const tabs = ["资金费率", "持仓量", "爆仓数据", "大户持仓比"];
+function ExchangeTag({ exchange }: { exchange: string }) {
+  const colors: Record<string, string> = {
+    binance: "bg-yellow-500/20 text-yellow-400",
+    okx: "bg-blue-500/20 text-blue-400",
+    bybit: "bg-orange-500/20 text-orange-400",
+  };
+  const labels: Record<string, string> = { binance: "币安", okx: "欧易", bybit: "Bybit" };
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${colors[exchange] ?? "bg-gray-500/20 text-gray-400"}`}>{labels[exchange] ?? exchange}</span>;
+}
 
 export default function MarketOverview() {
-  const [activeTab, setActiveTab] = useState("资金费率");
+  const [activeTab, setActiveTab] = useState("行情总览");
+
+  const { data: overview, isLoading: mktLoading, refetch: refetchMkt } = trpc.market.overview.useQuery(undefined, { refetchInterval: 15000 });
+  const { data: frBTC, refetch: refetchFr } = trpc.market.fundingRate.useQuery({ exchange: "binance", symbol: "BTC/USDT:USDT" }, { refetchInterval: 60000 });
+
+  const tickers = (overview as any[]) ?? [];
+  const fundingRates = frBTC ? [frBTC] : [];
+
+  // 按交易所分组
+  const binanceTickers = tickers.filter((t: any) => t.exchange === "binance");
+  const okxTickers = tickers.filter((t: any) => t.exchange === "okx");
+
+  const handleRefresh = () => { refetchMkt(); refetchFr(); };
 
   return (
     <div>
       <PageHeader
-        title="🌐 市场全景"
-        description="资金费率 · 持仓量 · 爆仓数据 · 大户持仓比"
+        title="市场全景"
+        description="实时行情 · 资金费率 · 多交易所数据"
         actions={
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => toast.info("已刷新")}>
+          <Button variant="outline" size="sm" className="text-xs" onClick={handleRefresh}>
             <RefreshCw size={14} className="mr-1" /> 刷新
           </Button>
         }
       />
 
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {tabs.map((tab) => (
-          <Button key={tab} variant={activeTab === tab ? "default" : "outline"} size="sm" className="text-xs" onClick={() => setActiveTab(tab)}>
+      {/* Tab 切换 */}
+      <div className="flex gap-1 mb-4 border-b border-border/30">
+        {TABS.map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm transition-colors ${activeTab === tab ? "text-neon-green border-b-2 border-neon-green" : "text-muted-foreground hover:text-foreground"}`}
+          >
             {tab}
-          </Button>
+          </button>
         ))}
       </div>
 
-      {activeTab === "资金费率" && (
-        <div className="terminal-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border bg-secondary/30">
-                  <th className="text-left p-3 text-muted-foreground font-medium">币种</th>
-                  <th className="text-right p-3 text-muted-foreground font-medium">价格</th>
-                  <th className="text-right p-3 text-muted-foreground font-medium">资金费率</th>
-                  <th className="text-right p-3 text-muted-foreground font-medium">持仓量</th>
-                  <th className="text-right p-3 text-muted-foreground font-medium">OI 变化</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fundingRates.map((r) => (
-                  <tr key={r.symbol} className="border-b border-border/50 hover:bg-secondary/20 transition-colors">
-                    <td className="p-3 font-medium text-foreground">{r.symbol}</td>
-                    <td className="p-3 text-right stat-number text-foreground">{r.price}</td>
-                    <td className={`p-3 text-right stat-number ${r.rate.startsWith("+") ? "text-neon-green" : "text-neon-red"}`}>{r.rate}</td>
-                    <td className="p-3 text-right stat-number text-foreground">{r.oi}</td>
-                    <td className={`p-3 text-right stat-number ${r.change.startsWith("+") ? "text-neon-green" : "text-neon-red"}`}>{r.change}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {activeTab === "行情总览" && (
+        <div className="terminal-card">
+          <div className="p-4 border-b border-border/30 flex items-center gap-2">
+            <Globe size={16} className="text-neon-blue" />
+            <span className="text-sm font-medium">实时行情（币安 + 欧易）</span>
+            <span className="text-xs text-muted-foreground ml-auto">15s 自动刷新</span>
           </div>
+          {mktLoading ? (
+            <div className="p-4 space-y-2">{[1,2,3,4,5,6,7,8].map(i => <div key={i} className="h-12 rounded bg-muted/20 animate-pulse" />)}</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/30">
+                    {["交易所","交易对","最新价","24h涨跌","24h高","24h低","24h成交量"].map(h => (
+                      <th key={h} className={`p-3 text-xs text-muted-foreground font-medium ${["交易所","交易对"].includes(h) ? "text-left" : "text-right"}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickers.map((t: any, idx: number) => (
+                    <tr key={`${t.exchange}-${t.symbol}-${idx}`} className="border-b border-border/20 hover:bg-muted/10 transition-colors">
+                      <td className="p-3"><ExchangeTag exchange={t.exchange} /></td>
+                      <td className="p-3 font-mono font-medium text-foreground">{t.symbol}</td>
+                      <td className="p-3 text-right font-mono font-bold text-foreground">
+                        ${Number(t.last).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className={`font-mono font-bold text-sm flex items-center justify-end gap-1 ${t.changePercent >= 0 ? "text-neon-green" : "text-neon-red"}`}>
+                          {t.changePercent >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                          {t.changePercent >= 0 ? "+" : ""}{Number(t.changePercent).toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-mono text-muted-foreground">
+                        ${Number(t.high).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                      </td>
+                      <td className="p-3 text-right font-mono text-muted-foreground">
+                        ${Number(t.low).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                      </td>
+                      <td className="p-3 text-right font-mono text-muted-foreground">
+                        {Number(t.volume).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "资金费率" && (
+        <div className="terminal-card">
+          <div className="p-4 border-b border-border/30 flex items-center gap-2">
+            <span className="text-sm font-medium">资金费率（币安合约）</span>
+            <span className="text-xs text-muted-foreground ml-auto">每 8 小时结算</span>
+          </div>
+          {fundingRates.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              <Minus size={32} className="mx-auto mb-2 opacity-30" />
+              暂无资金费率数据
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/30">
+                    {["交易对","资金费率","下次结算","交易所"].map(h => (
+                      <th key={h} className={`p-3 text-xs text-muted-foreground font-medium ${h === "交易对" ? "text-left" : "text-right"}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {fundingRates.map((fr: any, idx: number) => (
+                    <tr key={`${fr.symbol}-${idx}`} className="border-b border-border/20 hover:bg-muted/10 transition-colors">
+                      <td className="p-3 font-mono font-medium text-foreground">{fr.symbol}</td>
+                      <td className="p-3 text-right">
+                        <span className={`font-mono font-bold ${Number(fr.fundingRate) >= 0 ? "text-neon-green" : "text-neon-red"}`}>
+                          {(Number(fr.fundingRate) * 100).toFixed(4)}%
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-mono text-muted-foreground text-xs">
+                        {fr.nextFundingTime ? new Date(fr.nextFundingTime).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </td>
+                      <td className="p-3 text-right"><ExchangeTag exchange={fr.exchange} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
       {activeTab === "持仓量" && (
-        <div className="terminal-card p-4">
-          <h3 className="text-sm font-medium mb-4">持仓量变化趋势</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {fundingRates.slice(0, 4).map((r) => (
-              <div key={r.symbol} className="p-3 bg-secondary/30 rounded-lg">
-                <p className="text-sm font-medium text-foreground">{r.symbol}</p>
-                <p className="text-lg stat-number font-bold text-foreground mt-1">{r.oi}</p>
-                <p className={`text-xs stat-number mt-1 ${r.change.startsWith("+") ? "text-neon-green" : "text-neon-red"}`}>{r.change} 24h</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeTab === "爆仓数据" && (
-        <div className="terminal-card p-4">
-          <h3 className="text-sm font-medium mb-4">24h 爆仓统计</h3>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            <div className="p-3 bg-secondary/30 rounded-lg text-center">
-              <p className="text-lg stat-number font-bold text-neon-red">$127.5M</p>
-              <p className="text-[10px] text-muted-foreground mt-1">总爆仓</p>
-            </div>
-            <div className="p-3 bg-secondary/30 rounded-lg text-center">
-              <p className="text-lg stat-number font-bold text-neon-green">$68.3M</p>
-              <p className="text-[10px] text-muted-foreground mt-1">多头爆仓</p>
-            </div>
-            <div className="p-3 bg-secondary/30 rounded-lg text-center">
-              <p className="text-lg stat-number font-bold text-neon-red">$59.2M</p>
-              <p className="text-[10px] text-muted-foreground mt-1">空头爆仓</p>
-            </div>
-            <div className="p-3 bg-secondary/30 rounded-lg text-center">
-              <p className="text-lg stat-number font-bold text-foreground">45,230</p>
-              <p className="text-[10px] text-muted-foreground mt-1">爆仓人数</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === "大户持仓比" && (
-        <div className="terminal-card p-4">
-          <h3 className="text-sm font-medium mb-4">大户多空持仓比</h3>
-          <div className="space-y-3">
-            {fundingRates.slice(0, 6).map((r) => (
-              <div key={r.symbol} className="flex items-center gap-3">
-                <span className="text-xs font-medium text-foreground w-12">{r.symbol}</span>
-                <div className="flex-1 h-4 bg-secondary/30 rounded-full overflow-hidden flex">
-                  <div className="bg-neon-green/60 h-full" style={{ width: `${55 + Math.random() * 15}%` }} />
-                  <div className="bg-neon-red/60 h-full flex-1" />
-                </div>
-                <span className="text-[10px] text-muted-foreground w-16 text-right">多 {(55 + Math.random() * 15).toFixed(1)}%</span>
-              </div>
-            ))}
-          </div>
+        <div className="terminal-card p-8 text-center">
+          <Globe size={40} className="mx-auto mb-3 text-muted-foreground opacity-30" />
+          <p className="text-muted-foreground text-sm">持仓量数据需要专业数据服务，即将接入</p>
         </div>
       )}
     </div>

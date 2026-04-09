@@ -29,8 +29,8 @@ import LiveConsole from "./pages/LiveConsole";
 import UnifiedTrading from "./pages/UnifiedTrading";
 import VSWinRate from "./pages/VSWinRate";
 import VSConnect from "./pages/VSConnect";
-
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
     <DashboardLayout>
       <Switch>
