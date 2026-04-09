@@ -16,7 +16,7 @@ import {
 } from "./db";
 import { processSignal, getCacheStatus, generateMockSignal, hasRiskSignal } from "./signalEngine";
 import { evaluateStrategies, buildSignalContext, getAllStrategiesInfo } from "./strategyEngine";
-import { checkRisk, calcPositionSize } from "./riskManager";
+import { checkRisk, calcPositionSize, calcDynamicPositionPercent, calcDynamicStopLoss, calcDynamicTakeProfit, getBtcTrend, getCooldownStatus, markCooldown } from "./riskManager";
 import {
   getWarnMessages, getAIMessages, getFearGreedIndex,
   parseSignalContent, FUNDS_MOVEMENT_TYPE_MAP,
@@ -125,10 +125,21 @@ export const appRouter = router({
             const exchange = (config as any)?.selectedExchange ?? 'binance';
             const symbol = confluence.symbol.endsWith('USDT') ? confluence.symbol : `${confluence.symbol}USDT`;
             const leverage = config?.leverage ?? 5;
-            // 使用用户设置的仓位比例（autoTradingPositionPercent，1-10%），而非全局最大仓位
-            const posPercent = Number((config as any)?.autoTradingPositionPercent ?? 1);
+            // ── 动态仓位管理：评分越高仓位越大（60分=base%, 90+=5*base%）
+            const basePercent = Number((config as any)?.autoTradingPositionPercent ?? 1);
+            const posPercent = calcDynamicPositionPercent(scorePercent, basePercent, Math.min(basePercent * 5, 10));
+            // ── ATR动态止损：评分越高止损越紧（高质量信号不需要太宽的止损）
+            const dynamicSL = calcDynamicStopLoss(scorePercent, config?.stopLossPercent ?? 3.0);
+            const dynamicTP = calcDynamicTakeProfit(dynamicSL, config?.takeProfit1Percent ?? 5.0, config?.takeProfit2Percent ?? 10.0);
+            // ── BTC趋势过滤：下跌趋势禁止做多
+            if (direction === 'long') {
+              const btcTrend = await getBtcTrend();
+              if (btcTrend === 'down') {
+                autoTradeResult = { success: false, message: `BTC下跌趋势过滤，禁止做多 ${symbol}` };
+              }
+            }
 
-            try {
+            if (!autoTradeResult) try {
               if (exchange === 'binance' && (config as any)?.binanceApiKey) {
                 const svc = createBinanceService((config as any).binanceApiKey, (config as any).binanceSecretKey ?? '', (config as any).binanceUseTestnet ?? false);
                 const bal = await svc.getUSDTBalance();
@@ -170,6 +181,8 @@ export const appRouter = router({
               }
             } catch (e: any) {
               autoTradeResult = { success: false, message: `下单失败: ${e.message ?? '未知错误'}` };
+              // 下单失败时标记冷却期（防止反复尝试）
+              markCooldown(confluence.symbol);
             }
           }
 
@@ -980,6 +993,80 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return getTradeCases(input?.limit ?? 20);
       }),
+
+    // 冷却期状态查询
+    cooldownStatus: publicProcedure.query(async () => {
+      return getCooldownStatus();
+    }),
+
+    // BTC 趋势查询
+    btcTrend: publicProcedure.query(async () => {
+      const trend = await getBtcTrend();
+      return { trend };
+    }),
+
+    // 动态仓位预览：根据评分预计实际仓位比例
+    dynamicPositionPreview: publicProcedure
+      .input(z.object({ scorePercent: z.number().min(0).max(100) }))
+      .query(async ({ input }) => {
+        const config = await getActiveConfig();
+        const basePercent = Number((config as any)?.autoTradingPositionPercent ?? 1);
+        const posPercent = calcDynamicPositionPercent(input.scorePercent, basePercent, Math.min(basePercent * 5, 10));
+        const dynamicSL = calcDynamicStopLoss(input.scorePercent, config?.stopLossPercent ?? 3.0);
+        const dynamicTP = calcDynamicTakeProfit(dynamicSL, config?.takeProfit1Percent ?? 5.0, config?.takeProfit2Percent ?? 10.0);
+        return { scorePercent: input.scorePercent, posPercent, dynamicSL, dynamicTP };
+      }),
+
+    // 信号质量仪表盘：实时信号质量分布 + 各维度指标
+    signalQualityDashboard: publicProcedure.query(async () => {
+      const cacheStatus = getCacheStatus();
+      const recentSignals = await getRecentSignals(200);
+      const recentConfluence = await getRecentConfluenceSignals(50);
+      const oneHourAgo = Date.now() - 3600000;
+      const recentHour = recentSignals.filter(s => new Date(s.createdAt).getTime() > oneHourAgo);
+
+      // 评分分布
+      const scoreDistribution = [
+        { range: '90-100分', count: recentConfluence.filter(s => (s.score ?? 0) >= 0.9).length, color: '#22c55e' },
+        { range: '80-90分', count: recentConfluence.filter(s => (s.score ?? 0) >= 0.8 && (s.score ?? 0) < 0.9).length, color: '#84cc16' },
+        { range: '70-80分', count: recentConfluence.filter(s => (s.score ?? 0) >= 0.7 && (s.score ?? 0) < 0.8).length, color: '#eab308' },
+        { range: '60-70分', count: recentConfluence.filter(s => (s.score ?? 0) >= 0.6 && (s.score ?? 0) < 0.7).length, color: '#f97316' },
+        { range: '<60分', count: recentConfluence.filter(s => (s.score ?? 0) < 0.6).length, color: '#ef4444' },
+      ];
+
+      // 市场状态指标
+      const fomoCount = recentHour.filter(s => s.signalType === 'FOMO').length;
+      const alphaCount = recentHour.filter(s => s.signalType === 'ALPHA').length;
+      const riskCount = recentHour.filter(s => s.signalType === 'RISK').length;
+      const totalCount = recentHour.length;
+      const uniqueSymbols = new Set(recentHour.map(s => s.symbol)).size;
+      const longRatio = totalCount > 0 ? ((fomoCount + alphaCount) / totalCount) : 0;
+
+      // 当前市场环境评分
+      let marketScore = 50;
+      if (uniqueSymbols >= 10 && uniqueSymbols <= 20) marketScore += 20;
+      if (longRatio > 0.7) marketScore += 15;
+      if (riskCount < 3) marketScore += 10;
+      if (riskCount >= 5) marketScore -= 30;
+      if (totalCount <= 3) marketScore -= 20;
+      marketScore = Math.max(0, Math.min(100, marketScore));
+
+      const btcTrend = await getBtcTrend();
+      const cooldowns = getCooldownStatus();
+
+      return {
+        scoreDistribution,
+        marketStats: { fomoCount, alphaCount, riskCount, totalCount, uniqueSymbols, longRatio },
+        marketScore,
+        btcTrend,
+        cooldowns,
+        cacheStatus,
+        recentConfluenceCount: recentConfluence.length,
+        avgScore: recentConfluence.length > 0
+          ? recentConfluence.reduce((s, c) => s + (c.score ?? 0), 0) / recentConfluence.length
+          : 0,
+      };
+    }),
   }),
 
   // ─── 实盘交易所 API ────────────────────────────────────────────

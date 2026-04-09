@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Zap, TrendingUp, History, Settings, FlaskConical,
   ChevronLeft, ChevronRight, Activity, Shield, Bell, Menu, X,
   BookOpen, Satellite, Target, Globe, CandlestickChart,
-  BrainCircuit, DollarSign, Crosshair, Flame, Radio, Bot, BarChart2, Newspaper,
+  BrainCircuit, Brain, DollarSign, Crosshair, Flame, Radio, Bot, BarChart2, Newspaper,
   LogIn, LogOut, User
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -30,6 +30,7 @@ const navItems = [
   { path: "/whale-cost", icon: Crosshair, label: "主力成本", desc: "链上成本·偏离度" },
   { path: "/fund-flow", icon: DollarSign, label: "资金流仪表盘", desc: "现货+合约+链上" },
   { path: "/signal-resonance", icon: Flame, label: "信号共振引擎", desc: "多维度胜率评分" },
+  { path: "/signal-quality", icon: Brain, label: "信号质量仪表盘", desc: "动态仓位·冷却期·BTC趋势" },
   { path: "/bull-bear", icon: BarChart2, label: "多空综合面板", desc: "7大免费数据源·综合评分" },
   { path: "/news", icon: Newspaper, label: "新闻情绪面板", desc: "CoinDesk·CT·Decrypt·利多利空" },
   { path: "/paper-trading", icon: Bot, label: "量化模拟交易", desc: "自动开仓·盈亏曲线·验证策略" },
