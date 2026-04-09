@@ -33,6 +33,10 @@ function getExchange(id: ExchangeId): any {
       apiKey,
       secret,
       enableRateLimit: true,
+      options: {
+        adjustForTimeDifference: true,
+        recvWindow: 10000,
+      },
     });
   }
 
