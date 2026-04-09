@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { RotateCcw } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -39,6 +40,8 @@ export default function UnifiedTrading() {
   const [orderType, setOrderType] = useState<"market" | "limit">("market");
   const [orderPrice, setOrderPrice] = useState("");
   const [activeTab, setActiveTab] = useState<"positions" | "orders" | "history" | "equity">("positions");
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetBalance, setResetBalance] = useState(10000);
 
   // 模拟交易数据
   const { data: paperAccount, refetch: refetchPaperAccount } = trpc.paperTrading.getAccount.useQuery();
@@ -72,6 +75,16 @@ export default function UnifiedTrading() {
   });
   const paperClosePosition = trpc.paperTrading.closePosition.useMutation({
     onSuccess: () => { refetchPaperPositions(); refetchPaperAccount(); toast.success("平仓成功"); },
+  });
+
+  const paperResetAccount = trpc.paperTrading.resetAccount.useMutation({
+    onSuccess: () => {
+      refetchPaperAccount();
+      refetchPaperPositions();
+      setShowResetModal(false);
+      toast.success(`模拟账户已重置，初始资金 $${resetBalance.toLocaleString()} USDT`);
+    },
+    onError: (e) => toast.error(`重置失败: ${e.message}`),
   });
 
   // 实盘下单（Binance）
@@ -267,6 +280,17 @@ export default function UnifiedTrading() {
           >
             <RefreshCw className="w-4 h-4" />
           </Button>
+          {mode === "paper" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowResetModal(true)}
+              className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
+            >
+              <RotateCcw className="w-4 h-4 mr-1" />
+              重置账户
+            </Button>
+          )}
           {mode === "live" && (
             <Button
               size="sm"
@@ -804,6 +828,70 @@ export default function UnifiedTrading() {
                 )}
               >
                 {orderSide === "long" ? "做多开仓" : "做空开仓"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 模拟账户重置弹窗 */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-[var(--color-card)] rounded-xl border border-[var(--color-border)] p-6 w-full max-w-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-purple-400" />
+                重置模拟账户
+              </h3>
+              <button onClick={() => setShowResetModal(false)} className="text-[var(--color-muted)] hover:text-[var(--color-text)]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-[var(--color-muted)] mb-4">
+              重置将清空所有持仓和交易记录，并将账户余额重置为指定金额。此操作不可撤销。
+            </p>
+            <div className="mb-4">
+              <label className="text-xs text-[var(--color-muted)] mb-1 block">初始资金 (USDT)</label>
+              <input
+                type="number"
+                value={resetBalance}
+                onChange={e => setResetBalance(parseFloat(e.target.value) || 10000)}
+                min={100}
+                max={1000000}
+                step={1000}
+                className="w-full bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm text-[var(--color-text)] mb-2"
+              />
+              <div className="flex gap-2">
+                {[1000, 5000, 10000, 50000].map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setResetBalance(v)}
+                    className={cn(
+                      "flex-1 py-1 rounded text-xs border transition-all",
+                      resetBalance === v
+                        ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
+                        : "border-[var(--color-border)] text-[var(--color-muted)] hover:border-purple-500/30"
+                    )}
+                  >
+                    ${v.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 border-[var(--color-border)]"
+                onClick={() => setShowResetModal(false)}
+              >
+                取消
+              </Button>
+              <Button
+                className="flex-1 bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30"
+                onClick={() => paperResetAccount.mutate({ initialBalance: resetBalance })}
+                disabled={paperResetAccount.isPending}
+              >
+                {paperResetAccount.isPending ? "重置中..." : "确认重置"}
               </Button>
             </div>
           </div>

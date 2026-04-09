@@ -5,10 +5,13 @@ import {
   LayoutDashboard, Zap, TrendingUp, History, Settings, FlaskConical,
   ChevronLeft, ChevronRight, Activity, Shield, Bell, Menu, X,
   BookOpen, Satellite, Target, Globe, CandlestickChart,
-  BrainCircuit, DollarSign, Crosshair, Flame, Radio, Bot, BarChart2, Newspaper
+  BrainCircuit, DollarSign, Crosshair, Flame, Radio, Bot, BarChart2, Newspaper,
+  LogIn, LogOut, User
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { getLoginUrl } from "@/const";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, label: "仪表盘", desc: "总览" },
@@ -48,6 +51,8 @@ export default function TradingLayout({ children }: { children: React.ReactNode 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const { user, loading: authLoading, logout } = useAuth();
+
   const { data: snapshot } = trpc.account.snapshot.useQuery(undefined, { refetchInterval: 30000 });
   const { data: config } = trpc.config.active.useQuery();
   const { data: recentSignals } = trpc.signals.list.useQuery({ limit: 5 }, { refetchInterval: 5000 });
@@ -63,6 +68,14 @@ export default function TradingLayout({ children }: { children: React.ReactNode 
   const totalBalance = snapshot?.totalBalance ?? 0;
   const dailyPnl = snapshot?.dailyPnl ?? 0;
   const isProfit = dailyPnl >= 0;
+
+  const handleLogin = () => {
+    window.location.href = getLoginUrl();
+  };
+
+  const handleLogout = async () => {
+    await logout();
+  };
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
@@ -162,7 +175,7 @@ export default function TradingLayout({ children }: { children: React.ReactNode 
 
         {/* Config Status */}
         {!collapsed && config && (
-          <div className="px-3 pb-3">
+          <div className="px-3 pb-2">
             <div className={cn(
               "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs",
               config.autoTradingEnabled ? "bg-profit-subtle text-profit" : "bg-muted text-muted-foreground"
@@ -172,6 +185,48 @@ export default function TradingLayout({ children }: { children: React.ReactNode 
             </div>
           </div>
         )}
+
+        {/* Login / User Area */}
+        <div className={cn("px-3 pb-3 border-t border-sidebar-border pt-3", collapsed && "px-2")}>
+          {authLoading ? (
+            <div className={cn("flex items-center gap-2 px-2 py-2 rounded-lg bg-muted/30", collapsed && "justify-center")}>
+              <div className="w-4 h-4 rounded-full bg-muted-foreground/30 animate-pulse" />
+              {!collapsed && <span className="text-xs text-muted-foreground">加载中...</span>}
+            </div>
+          ) : user ? (
+            <div className={cn("flex items-center gap-2", collapsed && "justify-center")}>
+              <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                <User className="w-3.5 h-3.5 text-primary" />
+              </div>
+              {!collapsed && (
+                <>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-foreground truncate">{user.name || "用户"}</div>
+                    <div className="text-xs text-muted-foreground truncate">{user.email || "已登录"}</div>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    title="退出登录"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={handleLogin}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-colors",
+                collapsed && "justify-center px-2"
+              )}
+            >
+              <LogIn className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="text-sm font-medium">点击登录</span>}
+            </button>
+          )}
+        </div>
 
         {/* Collapse toggle */}
         <button
@@ -244,6 +299,17 @@ export default function TradingLayout({ children }: { children: React.ReactNode 
             <div className="w-1.5 h-1.5 rounded-full bg-profit signal-live" />
             <span className="hidden sm:inline">实时</span>
           </div>
+
+          {/* Top bar login button (mobile / when not logged in) */}
+          {!authLoading && !user && (
+            <button
+              onClick={handleLogin}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-colors text-xs font-medium"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              登录
+            </button>
+          )}
         </header>
 
         {/* Page content */}
