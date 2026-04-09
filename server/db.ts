@@ -307,7 +307,31 @@ export async function getTelegramConfig() {
   const db = await getDb();
   if (!db) return null;
   const result = await db.select().from(telegramConfig).limit(1);
-  return result[0] ?? null;
+  const dbConfig = result[0] ?? null;
+  // 优先使用环境变量中的 Bot Token（如果数据库中为空）
+  const envToken = process.env.TELEGRAM_BOT_TOKEN;
+  const envChatId = process.env.TELEGRAM_CHAT_ID;
+  if (dbConfig) {
+    return {
+      ...dbConfig,
+      botToken: dbConfig.botToken || envToken || '',
+      chatId: dbConfig.chatId || envChatId || '',
+    };
+  }
+  // 数据库中没有记录，使用环境变量创建默认配置
+  if (envToken && envChatId) {
+    return {
+      id: 0,
+      botToken: envToken,
+      chatId: envChatId,
+      enableTradeNotify: true,
+      enableRiskNotify: true,
+      enableDailyReport: true,
+      isActive: true,
+      updatedAt: new Date(),
+    };
+  }
+  return null;
 }
 
 export async function upsertTelegramConfig(config: { botToken?: string; chatId?: string; enableTradeNotify?: boolean; enableRiskNotify?: boolean; enableDailyReport?: boolean; isActive?: boolean }) {

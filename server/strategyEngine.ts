@@ -114,7 +114,7 @@ function evalThreeGreenLines(ctx: SignalContext): { triggered: boolean; conditio
     },
     {
       name: "AI 评分 ≥ 65",
-      met: c.aiScore >= 65,
+      met: c.aiScore >= 55,
       value: c.aiScore,
     },
     {
@@ -145,7 +145,7 @@ function evalVacuumBreakout(ctx: SignalContext): { triggered: boolean; condition
     },
     {
       name: "Alpha 评分 ≥ 65",
-      met: c.aiScore >= 65,
+      met: c.aiScore >= 55,
       value: c.aiScore,
     },
     {
@@ -174,7 +174,7 @@ function evalAlphaFireDual(ctx: SignalContext): { triggered: boolean; conditions
     },
     {
       name: "AI 评分 ≥ 65",
-      met: c.aiScore >= 65,
+      met: c.aiScore >= 55,
       value: c.aiScore,
     },
     {
