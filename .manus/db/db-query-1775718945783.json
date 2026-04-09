@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `trades` (`id` int AUTO_INCREMENT PRIMARY KEY, `symbol` varchar(32) NOT NULL, `confluenceSignalId` int, `action` enum('OPEN_LONG','OPEN_SHORT','CLOSE_LONG','CLOSE_SHORT','PARTIAL_CLOSE','STOP_LOSS','TAKE_PROFIT') NOT NULL, `quantity` float NOT NULL, `entryPrice` float NOT NULL, `exitPrice` float, `stopLoss` float, `takeProfit1` float, `takeProfit2` float, `leverage` int DEFAULT 1, `pnl` float DEFAULT 0, `pnlPercent` float DEFAULT 0, `signalScore` float, `riskLevel` enum('LOW','MEDIUM','HIGH') DEFAULT 'MEDIUM', `status` enum('open','closed','cancelled') NOT NULL DEFAULT 'open', `closeReason` text, `binanceOrderId` varchar(128), `isTestnet` boolean DEFAULT false, `openedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `closedAt` timestamp)",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user T2V9bjaWYfFt4Mr.root --database ZMqrPqR5JTAQoHvXkBDoDE --execute CREATE TABLE IF NOT EXISTS `trades` (`id` int AUTO_INCREMENT PRIMARY KEY, `symbol` varchar(32) NOT NULL, `confluenceSignalId` int, `action` enum('OPEN_LONG','OPEN_SHORT','CLOSE_LONG','CLOSE_SHORT','PARTIAL_CLOSE','STOP_LOSS','TAKE_PROFIT') NOT NULL, `quantity` float NOT NULL, `entryPrice` float NOT NULL, `exitPrice` float, `stopLoss` float, `takeProfit1` float, `takeProfit2` float, `leverage` int DEFAULT 1, `pnl` float DEFAULT 0, `pnlPercent` float DEFAULT 0, `signalScore` float, `riskLevel` enum('LOW','MEDIUM','HIGH') DEFAULT 'MEDIUM', `status` enum('open','closed','cancelled') NOT NULL DEFAULT 'open', `closeReason` text, `binanceOrderId` varchar(128), `isTestnet` boolean DEFAULT false, `openedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `closedAt` timestamp)",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1644
+}

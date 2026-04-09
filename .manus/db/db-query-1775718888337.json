@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `signals` (`id` int AUTO_INCREMENT PRIMARY KEY, `signalId` varchar(128) NOT NULL UNIQUE, `symbol` varchar(32) NOT NULL, `signalType` enum('FOMO','ALPHA','RISK','FALL','FUND_MOVE','LISTING','FUND_ESCAPE','FUND_ABNORMAL') NOT NULL, `messageType` int NOT NULL, `score` float DEFAULT 0, `rawData` json, `processed` boolean DEFAULT false, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user T2V9bjaWYfFt4Mr.root --database ZMqrPqR5JTAQoHvXkBDoDE --execute CREATE TABLE IF NOT EXISTS `signals` (`id` int AUTO_INCREMENT PRIMARY KEY, `signalId` varchar(128) NOT NULL UNIQUE, `symbol` varchar(32) NOT NULL, `signalType` enum('FOMO','ALPHA','RISK','FALL','FUND_MOVE','LISTING','FUND_ESCAPE','FUND_ABNORMAL') NOT NULL, `messageType` int NOT NULL, `score` float DEFAULT 0, `rawData` json, `processed` boolean DEFAULT false, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1717
+}

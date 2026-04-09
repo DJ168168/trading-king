@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `positions` (`id` int AUTO_INCREMENT PRIMARY KEY, `symbol` varchar(32) NOT NULL UNIQUE, `quantity` float NOT NULL, `entryPrice` float NOT NULL, `currentPrice` float NOT NULL, `leverage` int DEFAULT 1, `unrealizedPnl` float DEFAULT 0, `unrealizedPnlPercent` float DEFAULT 0, `stopLoss` float, `takeProfit1` float, `takeProfit2` float, `tradeId` int, `openedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user T2V9bjaWYfFt4Mr.root --database ZMqrPqR5JTAQoHvXkBDoDE --execute CREATE TABLE IF NOT EXISTS `positions` (`id` int AUTO_INCREMENT PRIMARY KEY, `symbol` varchar(32) NOT NULL UNIQUE, `quantity` float NOT NULL, `entryPrice` float NOT NULL, `currentPrice` float NOT NULL, `leverage` int DEFAULT 1, `unrealizedPnl` float DEFAULT 0, `unrealizedPnlPercent` float DEFAULT 0, `stopLoss` float, `takeProfit1` float, `takeProfit2` float, `tradeId` int, `openedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1557
+}
