@@ -32,6 +32,9 @@ import { TRPCError } from "@trpc/server";
 import { getMarketOverview, getMultiFundingRates, getMultiOpenInterest, getMultiLongShortRatio } from "./coinGlassService";
 import { createBinanceService } from "./binanceService";
 import { createOKXService } from "./okxService";
+import { createBybitService } from "./bybitService";
+import { createGateService } from "./gateService";
+import { createBitgetService } from "./bitgetService";
 import {
   startPaperTradingEngine, stopPaperTradingEngine, isEngineRunning, runPaperTradingCycle
 } from "./paperTradingEngine";
@@ -1057,9 +1060,335 @@ export const appRouter = router({
         hasOkxSecret: !!(cfg?.okxSecretKey),
         hasOkxPassphrase: !!(cfg?.okxPassphrase),
         okxUseDemo: cfg?.okxUseDemo ?? true,
+        hasBybitKey: !!(cfg?.bybitApiKey),
+        hasBybitSecret: !!(cfg?.bybitSecretKey),
+        bybitUseTestnet: cfg?.bybitUseTestnet ?? true,
+        hasGateKey: !!(cfg?.gateApiKey),
+        hasGateSecret: !!(cfg?.gateSecretKey),
+        hasBitgetKey: !!(cfg?.bitgetApiKey),
+        hasBitgetSecret: !!(cfg?.bitgetSecretKey),
+        hasBitgetPassphrase: !!(cfg?.bitgetPassphrase),
         autoTradingEnabled: cfg?.autoTradingEnabled ?? false,
+        minScoreThreshold: cfg?.minScoreThreshold ?? 60,
       };
-    }),  }),
+    }),
+
+    // 保存完整交易所配置（含 Bybit/Gate/Bitget）
+    saveFullExchangeConfig: protectedProcedure
+      .input(z.object({
+        selectedExchange: z.enum(["binance", "okx", "bybit", "gate", "bitget", "both", "all"]).default("binance"),
+        binanceApiKey: z.string().default(""),
+        binanceSecretKey: z.string().default(""),
+        binanceUseTestnet: z.boolean().default(false),
+        okxApiKey: z.string().default(""),
+        okxSecretKey: z.string().default(""),
+        okxPassphrase: z.string().default(""),
+        okxUseDemo: z.boolean().default(false),
+        bybitApiKey: z.string().default(""),
+        bybitSecretKey: z.string().default(""),
+        bybitUseTestnet: z.boolean().default(false),
+        gateApiKey: z.string().default(""),
+        gateSecretKey: z.string().default(""),
+        bitgetApiKey: z.string().default(""),
+        bitgetSecretKey: z.string().default(""),
+        bitgetPassphrase: z.string().default(""),
+        autoTradingEnabled: z.boolean().default(false),
+        minScoreThreshold: z.number().min(0).max(100).default(60),
+      }))
+      .mutation(async ({ input }) => {
+        const existing = await getActiveConfig();
+        const updateData = {
+          selectedExchange: input.selectedExchange as any,
+          binanceApiKey: input.binanceApiKey,
+          binanceSecretKey: input.binanceSecretKey,
+          binanceUseTestnet: input.binanceUseTestnet,
+          okxApiKey: input.okxApiKey,
+          okxSecretKey: input.okxSecretKey,
+          okxPassphrase: input.okxPassphrase,
+          okxUseDemo: input.okxUseDemo,
+          bybitApiKey: input.bybitApiKey,
+          bybitSecretKey: input.bybitSecretKey,
+          bybitUseTestnet: input.bybitUseTestnet,
+          gateApiKey: input.gateApiKey,
+          gateSecretKey: input.gateSecretKey,
+          bitgetApiKey: input.bitgetApiKey,
+          bitgetSecretKey: input.bitgetSecretKey,
+          bitgetPassphrase: input.bitgetPassphrase,
+          autoTradingEnabled: input.autoTradingEnabled,
+          minScoreThreshold: input.minScoreThreshold,
+        };
+        if (existing) {
+          await updateStrategyConfig(existing.id, updateData);
+        } else {
+          await upsertStrategyConfig({ name: "default", ...updateData });
+        }
+        return { success: true };
+      }),
+
+    // 测试 Bybit 连接
+    bybitTest: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.bybitApiKey) return { success: false, message: "请先配置 Bybit API Key" };
+      const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
+      return svc.testConnection();
+    }),
+
+    // 获取 Bybit 账户余额
+    bybitAccount: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.bybitApiKey) throw new Error("请先配置 Bybit API Key");
+      const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
+      return svc.getBalance();
+    }),
+
+    // 获取 Bybit 持仓
+    bybitPositions: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.bybitApiKey) throw new Error("请先配置 Bybit API Key");
+      const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
+      return svc.getPositions();
+    }),
+
+    // Bybit 下单
+    bybitPlaceOrder: protectedProcedure
+      .input(z.object({
+        symbol: z.string(),
+        side: z.enum(["Buy", "Sell"]),
+        qty: z.string(),
+        orderType: z.enum(["Market", "Limit"]).default("Market"),
+        price: z.string().optional(),
+        leverage: z.number().min(1).max(100).default(5),
+      }))
+      .mutation(async ({ input }) => {
+        const cfg = await getActiveConfig();
+        if (!cfg?.bybitApiKey) throw new Error("请先配置 Bybit API Key");
+        const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
+        await svc.setLeverage("linear", input.symbol, String(input.leverage), String(input.leverage));
+        return svc.placeOrder({
+          category: "linear",
+          symbol: input.symbol,
+          side: input.side,
+          orderType: input.orderType,
+          qty: input.qty,
+          price: input.price,
+        });
+      }),
+
+    // Bybit 平仓
+    bybitClosePosition: protectedProcedure
+      .input(z.object({ symbol: z.string(), side: z.enum(["Buy", "Sell"]), qty: z.string() }))
+      .mutation(async ({ input }) => {
+        const cfg = await getActiveConfig();
+        if (!cfg?.bybitApiKey) throw new Error("请先配置 Bybit API Key");
+        const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
+        return svc.closePosition("linear", input.symbol, input.side, input.qty);
+      }),
+
+    // 测试 Gate.io 连接
+    gateTest: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.gateApiKey) return { success: false, message: "请先配置 Gate.io API Key" };
+      const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
+      return svc.testConnection();
+    }),
+
+    // 获取 Gate.io 账户余额
+    gateAccount: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.gateApiKey) throw new Error("请先配置 Gate.io API Key");
+      const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
+      return svc.getBalance();
+    }),
+
+    // 获取 Gate.io 持仓
+    gatePositions: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.gateApiKey) throw new Error("请先配置 Gate.io API Key");
+      const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
+      return svc.getPositions();
+    }),
+
+    // Gate.io 下单
+    gatePlaceOrder: protectedProcedure
+      .input(z.object({
+        contract: z.string(),
+        size: z.number(),
+        price: z.string().optional(),
+        reduceOnly: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const cfg = await getActiveConfig();
+        if (!cfg?.gateApiKey) throw new Error("请先配置 Gate.io API Key");
+        const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
+        return svc.placeOrder("usdt", {
+          contract: input.contract,
+          size: input.size,
+          price: input.price ?? "0",
+          tif: "ioc",
+          reduce_only: input.reduceOnly,
+        });
+      }),
+
+    // 测试 Bitget 连接
+    bitgetTest: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.bitgetApiKey) return { success: false, message: "请先配置 Bitget API Key" };
+      const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
+      return svc.testConnection();
+    }),
+
+    // 获取 Bitget 账户余额
+    bitgetAccount: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.bitgetApiKey) throw new Error("请先配置 Bitget API Key");
+      const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
+      return svc.getBalance();
+    }),
+
+    // 获取 Bitget 持仓
+    bitgetPositions: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.bitgetApiKey) throw new Error("请先配置 Bitget API Key");
+      const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
+      return svc.getPositions();
+    }),
+
+    // Bitget 下单
+    bitgetPlaceOrder: protectedProcedure
+      .input(z.object({
+        symbol: z.string(),
+        side: z.enum(["buy", "sell"]),
+        tradeSide: z.enum(["open", "close"]).default("open"),
+        size: z.string(),
+        orderType: z.enum(["market", "limit"]).default("market"),
+        price: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const cfg = await getActiveConfig();
+        if (!cfg?.bitgetApiKey) throw new Error("请先配置 Bitget API Key");
+        const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
+        return svc.placeOrder({
+          symbol: input.symbol,
+          productType: "USDT-FUTURES",
+          marginMode: "crossed",
+          marginCoin: "USDT",
+          size: input.size,
+          side: input.side,
+          tradeSide: input.tradeSide,
+          orderType: input.orderType,
+          price: input.price,
+        });
+      }),
+
+    // 获取所有交易所汇总账户信息
+    allAccounts: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      const result: Record<string, any> = {};
+      // Binance
+      if (cfg?.binanceApiKey) {
+        try {
+          const svc = createBinanceService(cfg.binanceApiKey, cfg.binanceSecretKey ?? "", cfg.binanceUseTestnet ?? false);
+          const usdtBal = await svc.getUSDTBalance();
+          result.binance = { connected: true, usdtBalance: usdtBal.balance, availableBalance: usdtBal.available };
+        } catch (e: any) { result.binance = { connected: false, error: e.message }; }
+      }
+      // OKX
+      if (cfg?.okxApiKey) {
+        try {
+          const svc = createOKXService(cfg.okxApiKey, cfg.okxSecretKey ?? "", cfg.okxPassphrase ?? "", cfg.okxUseDemo ?? false);
+          const usdtBal = await svc.getBalance('USDT');
+          result.okx = { connected: true, usdtBalance: usdtBal.balance, availableBalance: usdtBal.available };
+        } catch (e: any) { result.okx = { connected: false, error: e.message }; }
+      }
+      // Bybit
+      if (cfg?.bybitApiKey) {
+        try {
+          const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
+          const balances = await svc.getBalance();
+          const usdt = balances.find((b: any) => b.coin === 'USDT');
+          result.bybit = { connected: true, usdtBalance: parseFloat(usdt?.walletBalance ?? '0'), availableBalance: parseFloat(usdt?.availableToWithdraw ?? '0') };
+        } catch (e: any) { result.bybit = { connected: false, error: e.message }; }
+      }
+      // Gate.io
+      if (cfg?.gateApiKey) {
+        try {
+          const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
+          const balance = await svc.getBalance();
+          result.gate = { connected: true, usdtBalance: parseFloat(balance?.total ?? '0'), availableBalance: parseFloat(balance?.available ?? '0') };
+        } catch (e: any) { result.gate = { connected: false, error: e.message }; }
+      }
+      // Bitget
+      if (cfg?.bitgetApiKey) {
+        try {
+          const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
+          const balance = await svc.getBalance();
+          result.bitget = { connected: true, usdtBalance: parseFloat(balance?.equity ?? '0'), availableBalance: parseFloat(balance?.available ?? '0') };
+        } catch (e: any) { result.bitget = { connected: false, error: e.message }; }
+      }
+      return result;
+    }),
+
+    // 获取所有交易所汇总持仓
+    allPositions: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      const result: Array<{ exchange: string; symbol: string; side: string; size: string; entryPrice: string; unrealizedPnl: string; leverage: string }> = [];
+      // Binance
+      if (cfg?.binanceApiKey) {
+        try {
+          const svc = createBinanceService(cfg.binanceApiKey, cfg.binanceSecretKey ?? "", cfg.binanceUseTestnet ?? false);
+          const positions = await svc.getPositions();
+          for (const p of positions) {
+            if (parseFloat(p.positionAmt) !== 0) {
+              result.push({ exchange: 'binance', symbol: p.symbol, side: parseFloat(p.positionAmt) > 0 ? 'long' : 'short', size: Math.abs(parseFloat(p.positionAmt)).toString(), entryPrice: p.entryPrice, unrealizedPnl: p.unRealizedProfit, leverage: p.leverage });
+            }
+          }
+        } catch {}
+      }
+      // OKX
+      if (cfg?.okxApiKey) {
+        try {
+          const svc = createOKXService(cfg.okxApiKey, cfg.okxSecretKey ?? "", cfg.okxPassphrase ?? "", cfg.okxUseDemo ?? false);
+          const positions = await svc.getPositions();
+          for (const p of positions) {
+            if (parseFloat(p.pos) !== 0) {
+              result.push({ exchange: 'okx', symbol: p.instId, side: p.posSide, size: p.pos, entryPrice: p.avgPx, unrealizedPnl: p.upl, leverage: p.lever });
+            }
+          }
+        } catch {}
+      }
+      // Bybit
+      if (cfg?.bybitApiKey) {
+        try {
+          const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
+          const positions = await svc.getPositions();
+          for (const p of positions) {
+            result.push({ exchange: 'bybit', symbol: p.symbol, side: p.side.toLowerCase(), size: p.size, entryPrice: p.avgPrice, unrealizedPnl: p.unrealisedPnl, leverage: p.leverage });
+          }
+        } catch {}
+      }
+      // Gate.io
+      if (cfg?.gateApiKey) {
+        try {
+          const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
+          const positions = await svc.getPositions();
+          for (const p of positions) {
+            result.push({ exchange: 'gate', symbol: p.contract, side: p.size > 0 ? 'long' : 'short', size: Math.abs(p.size).toString(), entryPrice: p.entry_price, unrealizedPnl: p.unrealised_pnl, leverage: p.leverage });
+          }
+        } catch {}
+      }
+      // Bitget
+      if (cfg?.bitgetApiKey) {
+        try {
+          const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
+          const positions = await svc.getPositions();
+          for (const p of positions) {
+            result.push({ exchange: 'bitget', symbol: p.symbol, side: p.holdSide, size: p.total, entryPrice: p.openPriceAvg, unrealizedPnl: p.unrealizedPL, leverage: p.leverage });
+          }
+        } catch {}
+      }
+      return result;
+    }),
+  }),
   // ─── ValueScan 信号历史胜率统计 ────────────────────────────────────────────────────────────────────────────────────
   // ─── 模拟交易 ────────────────────────────────────────────────────────────────
   paperTrading: router({

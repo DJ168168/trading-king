@@ -58,7 +58,7 @@ const DIR_COLORS: Record<string, string> = {
   long: "text-green-400", short: "text-red-400", neutral: "text-yellow-400",
 };
 
-type TabKey = "chart" | "valuescan" | "telegram" | "market" | "binance";
+type TabKey = "chart" | "valuescan" | "telegram" | "market" | "binance" | "exchanges" | "autotrading";
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<TabKey>("chart");
@@ -69,6 +69,10 @@ export default function Settings() {
     enableTradeNotify: true, enableRiskNotify: true, enableDailyReport: true, isActive: false,
   });
   const [binanceForm, setBinanceForm] = useState({ apiKey: "", secretKey: "", showSecret: false });
+  const [bybitForm, setBybitForm] = useState({ apiKey: "", secretKey: "", showSecret: false, useTestnet: false });
+  const [gateForm, setGateForm] = useState({ apiKey: "", secretKey: "", showSecret: false });
+  const [bitgetForm, setBitgetForm] = useState({ apiKey: "", secretKey: "", passphrase: "", showSecret: false });
+  const [autoTradingForm, setAutoTradingForm] = useState({ enabled: false, minScoreThreshold: 60, selectedExchange: "binance" as string });
 
   const { data: vsAccount, isLoading: vsLoading } = trpc.valueScan.accountInfo.useQuery();
   const { data: fearGreed } = trpc.valueScan.fearGreed.useQuery();
@@ -90,11 +94,12 @@ export default function Settings() {
 
   useEffect(() => {
     if (activeConfig) {
-      setBinanceForm(f => ({
-        ...f,
-        apiKey: (activeConfig as any).binanceApiKey ?? "",
-        secretKey: (activeConfig as any).binanceSecretKey ?? "",
-      }));
+      const cfg = activeConfig as any;
+      setBinanceForm(f => ({ ...f, apiKey: cfg.binanceApiKey ?? "", secretKey: cfg.binanceSecretKey ?? "" }));
+      setBybitForm(f => ({ ...f, apiKey: cfg.bybitApiKey ?? "", secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false }));
+      setGateForm(f => ({ ...f, apiKey: cfg.gateApiKey ?? "", secretKey: cfg.gateSecretKey ?? "" }));
+      setBitgetForm(f => ({ ...f, apiKey: cfg.bitgetApiKey ?? "", secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" }));
+      setAutoTradingForm({ enabled: cfg.autoTradingEnabled ?? false, minScoreThreshold: cfg.minScoreThreshold ?? 60, selectedExchange: cfg.selectedExchange ?? "binance" });
     }
   }, [activeConfig]);
 
@@ -108,6 +113,10 @@ export default function Settings() {
   const saveConfigMutation = trpc.config.save.useMutation({
     onSuccess: () => toast.success("币安 API Key 已保存"),
     onError: () => toast.error("保存失败"),
+  });
+  const saveFullExchangeMutation = trpc.exchange.saveFullExchangeConfig.useMutation({
+    onSuccess: () => toast.success("交易所配置已保存"),
+    onError: (e) => toast.error(`保存失败: ${e.message}`),
   });
 
   const vsExpiry = useMemo(() => {
@@ -131,6 +140,8 @@ export default function Settings() {
     { key: "telegram", label: "Telegram", icon: <Bell className="w-3.5 h-3.5" /> },
     { key: "market", label: "市场概览", icon: <BarChart2 className="w-3.5 h-3.5" /> },
     { key: "binance", label: "币安 API", icon: <Key className="w-3.5 h-3.5" /> },
+    { key: "exchanges", label: "多交易所", icon: <Key className="w-3.5 h-3.5" /> },
+    { key: "autotrading", label: "自动交易", icon: <Activity className="w-3.5 h-3.5" /> },
   ];
 
   return (
@@ -556,6 +567,225 @@ export default function Settings() {
               <div className="flex gap-2">
                 <span className="text-primary font-bold">5.</span>
                 <span>开启「测试网」模式可先在测试环境验证功能，无需真实资金</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 多交易所 API 配置 ─── */}
+      {activeTab === "exchanges" && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-xl">
+            <Shield className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-yellow-400">安全提示</p>
+              <p className="text-xs text-muted-foreground mt-0.5">所有 API Key 仅存储在本地数据库。建议仅开启「合约交易」权限，<strong className="text-destructive">禁止勾选提币权限</strong>。</p>
+            </div>
+          </div>
+
+          {/* Bybit */}
+          <div className="gradient-card rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-orange-400" />
+              Bybit 合约 API 配置
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">API Key</label>
+                <input type="text" value={bybitForm.apiKey} onChange={e => setBybitForm(f => ({ ...f, apiKey: e.target.value }))} placeholder="请输入 Bybit API Key" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Secret Key</label>
+                <div className="relative">
+                  <input type={bybitForm.showSecret ? "text" : "password"} value={bybitForm.secretKey} onChange={e => setBybitForm(f => ({ ...f, secretKey: e.target.value }))} placeholder="请输入 Bybit Secret Key" className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary" />
+                  <button type="button" onClick={() => setBybitForm(f => ({ ...f, showSecret: !f.showSecret }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground">测试网模式</label>
+                <button onClick={() => setBybitForm(f => ({ ...f, useTestnet: !f.useTestnet }))} className={`relative w-10 h-5 rounded-full transition-colors ${bybitForm.useTestnet ? "bg-primary" : "bg-border"}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${bybitForm.useTestnet ? "translate-x-5" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            </div>
+            <Button onClick={() => saveFullExchangeMutation.mutate({ ...autoTradingForm, selectedExchange: autoTradingForm.selectedExchange as any, binanceApiKey: binanceForm.apiKey, binanceSecretKey: binanceForm.secretKey, binanceUseTestnet: false, okxApiKey: (activeConfig as any)?.okxApiKey ?? "", okxSecretKey: (activeConfig as any)?.okxSecretKey ?? "", okxPassphrase: (activeConfig as any)?.okxPassphrase ?? "", okxUseDemo: false, bybitApiKey: bybitForm.apiKey, bybitSecretKey: bybitForm.secretKey, bybitUseTestnet: bybitForm.useTestnet, gateApiKey: gateForm.apiKey, gateSecretKey: gateForm.secretKey, bitgetApiKey: bitgetForm.apiKey, bitgetSecretKey: bitgetForm.secretKey, bitgetPassphrase: bitgetForm.passphrase, autoTradingEnabled: autoTradingForm.enabled, minScoreThreshold: autoTradingForm.minScoreThreshold })} disabled={saveFullExchangeMutation.isPending} className="bg-primary hover:bg-primary/90">
+              {saveFullExchangeMutation.isPending ? "保存中..." : "保存 Bybit 配置"}
+            </Button>
+          </div>
+
+          {/* Gate.io */}
+          <div className="gradient-card rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400" />
+              Gate.io 合约 API 配置
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">API Key</label>
+                <input type="text" value={gateForm.apiKey} onChange={e => setGateForm(f => ({ ...f, apiKey: e.target.value }))} placeholder="请输入 Gate.io API Key" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Secret Key</label>
+                <div className="relative">
+                  <input type={gateForm.showSecret ? "text" : "password"} value={gateForm.secretKey} onChange={e => setGateForm(f => ({ ...f, secretKey: e.target.value }))} placeholder="请输入 Gate.io Secret Key" className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary" />
+                  <button type="button" onClick={() => setGateForm(f => ({ ...f, showSecret: !f.showSecret }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
+                </div>
+              </div>
+            </div>
+            <Button onClick={() => saveFullExchangeMutation.mutate({ ...autoTradingForm, selectedExchange: autoTradingForm.selectedExchange as any, binanceApiKey: binanceForm.apiKey, binanceSecretKey: binanceForm.secretKey, binanceUseTestnet: false, okxApiKey: (activeConfig as any)?.okxApiKey ?? "", okxSecretKey: (activeConfig as any)?.okxSecretKey ?? "", okxPassphrase: (activeConfig as any)?.okxPassphrase ?? "", okxUseDemo: false, bybitApiKey: bybitForm.apiKey, bybitSecretKey: bybitForm.secretKey, bybitUseTestnet: bybitForm.useTestnet, gateApiKey: gateForm.apiKey, gateSecretKey: gateForm.secretKey, bitgetApiKey: bitgetForm.apiKey, bitgetSecretKey: bitgetForm.secretKey, bitgetPassphrase: bitgetForm.passphrase, autoTradingEnabled: autoTradingForm.enabled, minScoreThreshold: autoTradingForm.minScoreThreshold })} disabled={saveFullExchangeMutation.isPending} className="bg-primary hover:bg-primary/90">
+              {saveFullExchangeMutation.isPending ? "保存中..." : "保存 Gate.io 配置"}
+            </Button>
+          </div>
+
+          {/* Bitget */}
+          <div className="gradient-card rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400" />
+              Bitget 合约 API 配置
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">API Key</label>
+                <input type="text" value={bitgetForm.apiKey} onChange={e => setBitgetForm(f => ({ ...f, apiKey: e.target.value }))} placeholder="请输入 Bitget API Key" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Secret Key</label>
+                <div className="relative">
+                  <input type={bitgetForm.showSecret ? "text" : "password"} value={bitgetForm.secretKey} onChange={e => setBitgetForm(f => ({ ...f, secretKey: e.target.value }))} placeholder="请输入 Bitget Secret Key" className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary" />
+                  <button type="button" onClick={() => setBitgetForm(f => ({ ...f, showSecret: !f.showSecret }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><Eye className="w-4 h-4" /></button>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Passphrase</label>
+                <input type="password" value={bitgetForm.passphrase} onChange={e => setBitgetForm(f => ({ ...f, passphrase: e.target.value }))} placeholder="请输入 Bitget Passphrase" className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+            </div>
+            <Button onClick={() => saveFullExchangeMutation.mutate({ ...autoTradingForm, selectedExchange: autoTradingForm.selectedExchange as any, binanceApiKey: binanceForm.apiKey, binanceSecretKey: binanceForm.secretKey, binanceUseTestnet: false, okxApiKey: (activeConfig as any)?.okxApiKey ?? "", okxSecretKey: (activeConfig as any)?.okxSecretKey ?? "", okxPassphrase: (activeConfig as any)?.okxPassphrase ?? "", okxUseDemo: false, bybitApiKey: bybitForm.apiKey, bybitSecretKey: bybitForm.secretKey, bybitUseTestnet: bybitForm.useTestnet, gateApiKey: gateForm.apiKey, gateSecretKey: gateForm.secretKey, bitgetApiKey: bitgetForm.apiKey, bitgetSecretKey: bitgetForm.secretKey, bitgetPassphrase: bitgetForm.passphrase, autoTradingEnabled: autoTradingForm.enabled, minScoreThreshold: autoTradingForm.minScoreThreshold })} disabled={saveFullExchangeMutation.isPending} className="bg-primary hover:bg-primary/90">
+              {saveFullExchangeMutation.isPending ? "保存中..." : "保存 Bitget 配置"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 自动交易设置 ─── */}
+      {activeTab === "autotrading" && (
+        <div className="space-y-4">
+          <div className="gradient-card rounded-xl p-5 space-y-5">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Activity className="w-4 h-4 text-primary" />
+              自动交易开关
+            </h3>
+
+            {/* 自动交易开关 */}
+            <div className="flex items-center justify-between p-4 bg-background/50 rounded-lg">
+              <div>
+                <p className="text-sm font-medium text-foreground">启用自动交易</p>
+                <p className="text-xs text-muted-foreground mt-0.5">系统将根据信号共振评分自动执行交易</p>
+              </div>
+              <button
+                onClick={() => setAutoTradingForm(f => ({ ...f, enabled: !f.enabled }))}
+                className={`relative w-12 h-6 rounded-full transition-colors ${autoTradingForm.enabled ? "bg-green-500" : "bg-border"}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${autoTradingForm.enabled ? "translate-x-7" : "translate-x-1"}`} />
+              </button>
+            </div>
+
+            {/* 最低评分阈值 */}
+            <div className="p-4 bg-background/50 rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-foreground">最低信号评分阈值</p>
+                <span className="text-lg font-bold text-primary">{autoTradingForm.minScoreThreshold}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={autoTradingForm.minScoreThreshold}
+                onChange={e => setAutoTradingForm(f => ({ ...f, minScoreThreshold: parseInt(e.target.value) }))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0 (全部执行)</span>
+                <span className="text-yellow-400">60 (建议)</span>
+                <span>100 (极严格)</span>
+              </div>
+              <p className="text-xs text-muted-foreground">评分高于此阈值的信号才会触发自动交易。建议设置 60-75 分，过低会频繁交易，过高会错过机会。</p>
+            </div>
+
+            {/* 默认交易所 */}
+            <div className="p-4 bg-background/50 rounded-lg space-y-2">
+              <p className="text-sm font-medium text-foreground">默认交易所</p>
+              <div className="grid grid-cols-3 gap-2">
+                {["binance", "okx", "bybit", "gate", "bitget", "all"].map(ex => (
+                  <button
+                    key={ex}
+                    onClick={() => setAutoTradingForm(f => ({ ...f, selectedExchange: ex }))}
+                    className={`py-2 rounded-lg text-xs font-medium border transition-all capitalize ${
+                      autoTradingForm.selectedExchange === ex
+                        ? "bg-primary/20 text-primary border-primary/30"
+                        : "border-border text-muted-foreground hover:border-foreground"
+                    }`}
+                  >
+                    {ex === "all" ? "全部" : ex === "binance" ? "Binance" : ex === "okx" ? "OKX" : ex === "bybit" ? "Bybit" : ex === "gate" ? "Gate.io" : "Bitget"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Button
+              onClick={() => saveFullExchangeMutation.mutate({
+                ...autoTradingForm,
+                selectedExchange: autoTradingForm.selectedExchange as any,
+                binanceApiKey: binanceForm.apiKey,
+                binanceSecretKey: binanceForm.secretKey,
+                binanceUseTestnet: false,
+                okxApiKey: (activeConfig as any)?.okxApiKey ?? "",
+                okxSecretKey: (activeConfig as any)?.okxSecretKey ?? "",
+                okxPassphrase: (activeConfig as any)?.okxPassphrase ?? "",
+                okxUseDemo: false,
+                bybitApiKey: bybitForm.apiKey,
+                bybitSecretKey: bybitForm.secretKey,
+                bybitUseTestnet: bybitForm.useTestnet,
+                gateApiKey: gateForm.apiKey,
+                gateSecretKey: gateForm.secretKey,
+                bitgetApiKey: bitgetForm.apiKey,
+                bitgetSecretKey: bitgetForm.secretKey,
+                bitgetPassphrase: bitgetForm.passphrase,
+                autoTradingEnabled: autoTradingForm.enabled,
+                minScoreThreshold: autoTradingForm.minScoreThreshold,
+              })}
+              disabled={saveFullExchangeMutation.isPending}
+              className="w-full bg-primary hover:bg-primary/90"
+            >
+              {saveFullExchangeMutation.isPending ? "保存中..." : "保存自动交易配置"}
+            </Button>
+          </div>
+
+          {/* 当前状态 */}
+          <div className="gradient-card rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-foreground mb-3">当前状态</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-background/50 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground">自动交易</p>
+                <p className={`text-sm font-medium mt-1 ${autoTradingForm.enabled ? "text-green-400" : "text-muted-foreground"}`}>
+                  {autoTradingForm.enabled ? "✅ 已启用" : "⏸ 已停止"}
+                </p>
+              </div>
+              <div className="bg-background/50 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground">最低评分</p>
+                <p className="text-sm font-medium mt-1 text-primary">{autoTradingForm.minScoreThreshold} 分</p>
+              </div>
+              <div className="bg-background/50 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground">默认交易所</p>
+                <p className="text-sm font-medium mt-1 text-foreground capitalize">{autoTradingForm.selectedExchange}</p>
+              </div>
+              <div className="bg-background/50 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground">Telegram 推送</p>
+                <p className={`text-sm font-medium mt-1 ${tgConfig?.isActive ? "text-green-400" : "text-muted-foreground"}`}>
+                  {tgConfig?.isActive ? "✅ 已启用" : "⏸ 未启用"}
+                </p>
               </div>
             </div>
           </div>

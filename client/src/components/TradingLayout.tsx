@@ -31,6 +31,7 @@ const navItems = [
   { path: "/news", icon: Newspaper, label: "新闻情绪面板", desc: "CoinDesk·CT·Decrypt·利多利空" },
   { path: "/paper-trading", icon: Bot, label: "量化模拟交易", desc: "自动开仓·盈亏曲线·验证策略" },
   { path: "/live-trading", icon: Radio, label: "实盘控制台", desc: "币安·欧易实盘下单" },
+  { path: "/unified-trading", icon: Radio, label: "统一交易面板", desc: "模拟+实盘·多交易所" },
   { path: "/vs-win-rate", icon: Target, label: "VS 信号胜率", desc: "历史胜率统计" },
   { path: "/vs-connect", icon: Satellite, label: "VS 账号连接", desc: "连接 ValueScan" },
 ];

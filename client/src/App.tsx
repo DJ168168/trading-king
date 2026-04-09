@@ -27,6 +27,7 @@ import VSWinRate from "./pages/VSWinRate";
 import PaperTrading from "./pages/PaperTrading";
 import BullBearPanel from "./pages/BullBearPanel";
 import NewsPanel from "./pages/NewsPanel";
+import UnifiedTrading from "./pages/UnifiedTrading";
 
 function Router() {
   return (
@@ -54,6 +55,7 @@ function Router() {
         <Route path="/paper-trading" component={PaperTrading} />
         <Route path="/bull-bear" component={BullBearPanel} />
         <Route path="/news" component={NewsPanel} />
+        <Route path="/unified-trading" component={UnifiedTrading} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

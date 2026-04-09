@@ -143,7 +143,20 @@ export const strategyConfig = mysqlTable("strategy_config", {
   okxPassphrase: varchar("okxPassphrase", { length: 256 }).default(""),
   okxUseDemo: boolean("okxUseDemo").default(true),
   // 交易所选择
-  selectedExchange: mysqlEnum("selectedExchange", ["binance", "okx", "both"]).default("binance"),
+  selectedExchange: mysqlEnum("selectedExchange", ["binance", "okx", "bybit", "gate", "bitget", "both", "all"]).default("binance"),
+  // Bybit API 配置
+  bybitApiKey: varchar("bybitApiKey", { length: 256 }).default(""),
+  bybitSecretKey: varchar("bybitSecretKey", { length: 256 }).default(""),
+  bybitUseTestnet: boolean("bybitUseTestnet").default(true),
+  // Gate.io API 配置
+  gateApiKey: varchar("gateApiKey", { length: 256 }).default(""),
+  gateSecretKey: varchar("gateSecretKey", { length: 256 }).default(""),
+  // Bitget API 配置
+  bitgetApiKey: varchar("bitgetApiKey", { length: 256 }).default(""),
+  bitgetSecretKey: varchar("bitgetSecretKey", { length: 256 }).default(""),
+  bitgetPassphrase: varchar("bitgetPassphrase", { length: 256 }).default(""),
+  // 自动交易最低评分阈值
+  minScoreThreshold: float("minScoreThreshold").default(60),
   // 交易开关
   autoTradingEnabled: boolean("autoTradingEnabled").default(false),
   useTestnet: boolean("useTestnet").default(true),

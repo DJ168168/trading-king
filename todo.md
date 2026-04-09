@@ -68,3 +68,15 @@
 - [x] 实现 ValueScan ticket+AES 认证 (Access-Ticket)
 - [x] 实现 ValueScan 自动刷新 Token (每50分钟)
 - [x] 预警信号接口测试通过 (返回实时信号数据)
+
+## 交易所扩展与统一面板
+- [x] 接入 Bybit 交易所（合约，模拟+实盘，server/bybitService.ts）
+- [x] 接入 Gate.io 交易所（合约，模拟+实盘，server/gateService.ts）
+- [x] 接入 Bitget 交易所（合约，模拟+实盘，server/bitgetService.ts）
+- [x] 统一交易面板：模拟交易+实盘交易整合到一个页面，支持切换交易所（/unified-trading）
+- [x] 统一持仓面板：所有交易所持仓汇总展示（exchange.allPositions）
+- [x] 统一账户余额：所有交易所余额汇总（exchange.allAccounts）
+- [x] 开启自动交易（设置→「自动交易」 tab，滑块设置最低评分阈值）
+- [x] Telegram 信号推送配置（设置→「Telegram」 tab）
+- [x] 多交易所 API Key 配置页面（设置→「多交易所」 tab）
+- [x] 数据库迁移：新增 bybitApiKey/gateApiKey/bitgetApiKey/minScoreThreshold/autoTradingEnabled 字段
