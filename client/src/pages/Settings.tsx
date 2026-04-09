@@ -5,7 +5,7 @@ import {
   Settings as SettingsIcon, Bell, BarChart2, Send, RefreshCw,
   TvMinimal, Activity, Crown, Calendar, Mail, User, Eye,
   Zap, TrendingUp, CheckCircle2, AlertCircle, WifiOff, Key, Lock, Shield,
-  Wallet, TrendingDown, Info, X
+  Wallet, TrendingDown, Info, X, Layers
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -298,13 +298,12 @@ export default function Settings() {
       : <span title={r.message ?? '连接失败'} className="w-2 h-2 rounded-full bg-red-400 inline-block ml-1" />;
   };
 
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode; dot?: React.ReactNode }[] = [
-    { key: "chart", label: "TV 图表", icon: <TvMinimal className="w-3.5 h-3.5" /> },
-    { key: "valuescan", label: "ValueScan", icon: <Activity className="w-3.5 h-3.5" /> },
-    { key: "telegram", label: "Telegram", icon: <Bell className="w-3.5 h-3.5" /> },
-    { key: "market", label: "市场概览", icon: <BarChart2 className="w-3.5 h-3.5" /> },
-    { key: "binance", label: "币安 API", icon: <Key className="w-3.5 h-3.5" />, dot: getExchangeDot('binance') },
-    { key: "exchanges", label: "多交易所", icon: <Key className="w-3.5 h-3.5" />, dot: (() => {
+  const tabs: { key: TabKey; label: string; icon: React.ReactNode; dot?: React.ReactNode; group?: string }[] = [
+    { key: "chart", label: "TV 图表", icon: <TvMinimal className="w-3.5 h-3.5" />, group: "工具" },
+    { key: "valuescan", label: "ValueScan", icon: <Activity className="w-3.5 h-3.5" />, group: "工具" },
+    { key: "telegram", label: "Telegram", icon: <Bell className="w-3.5 h-3.5" />, group: "工具" },
+    { key: "market", label: "市场概览", icon: <BarChart2 className="w-3.5 h-3.5" />, group: "工具" },
+    { key: "exchanges", label: "OKX / Bybit / Gate / Bitget", icon: <Layers className="w-3.5 h-3.5" />, group: "API", dot: (() => {
       const dots = ['bybit','gate','bitget','okx'].map(ex => testResults[ex]);
       const anyLoading = dots.some(d => d?.loading);
       const anyFail = dots.some(d => d && !d.loading && !d.success);
@@ -314,7 +313,8 @@ export default function Settings() {
       if (allOk) return <span className="w-2 h-2 rounded-full bg-green-400 inline-block ml-1" />;
       return null;
     })() },
-    { key: "autotrading", label: "自动交易", icon: <Activity className="w-3.5 h-3.5" /> },
+    { key: "binance", label: "币安 API", icon: <Key className="w-3.5 h-3.5" />, group: "API", dot: getExchangeDot('binance') },
+    { key: "autotrading", label: "自动交易", icon: <Zap className="w-3.5 h-3.5" />, group: "API" },
   ];
 
   return (
@@ -329,22 +329,44 @@ export default function Settings() {
         <TradingViewTicker colorTheme="dark" />
       </div>
 
-      {/* Tab 导航 */}
-      <div className="flex flex-wrap gap-1 p-1 bg-accent rounded-lg w-fit">
-        {tabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-              activeTab === tab.key
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.icon}{tab.label}{tab.dot}
-          </button>
-        ))}
+      {/* Tab 导航 - 分组显示 */}
+      <div className="space-y-2">
+        {/* 工具组 */}
+        <div className="flex flex-wrap gap-1 p-1 bg-accent rounded-lg w-fit">
+          {tabs.filter(t => t.group === '工具').map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                activeTab === tab.key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {tab.icon}{tab.label}{tab.dot}
+            </button>
+          ))}
+        </div>
+        {/* API 配置组 - 突出显示 */}
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-primary/10 border border-primary/20 rounded-lg w-fit">
+          <span className="text-xs text-primary/60 font-semibold px-2">API 配置</span>
+          <div className="w-px h-4 bg-primary/20" />
+          {tabs.filter(t => t.group === 'API').map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                activeTab === tab.key
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-primary/70 hover:text-primary hover:bg-primary/10"
+              )}
+            >
+              {tab.icon}{tab.label}{tab.dot}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ─── TradingView 图表 ─── */}
