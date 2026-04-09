@@ -265,7 +265,7 @@ export default function VSWinRate() {
                     <th className="text-right py-2 pr-4">48h 涨跌</th>
                     <th className="text-center py-2 pr-4">结果</th>
                     <th className="text-left py-2 pr-4">记录时间</th>
-                    {user && <th className="text-center py-2">操作</th>}
+                    <th className="text-center py-2">{user ? "操作" : ""}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -307,13 +307,13 @@ export default function VSWinRate() {
                       <td className="py-2 pr-4 text-gray-500 text-xs">
                         {new Date(item.createdAt).toLocaleDateString("zh-CN")}
                       </td>
-                      {user && (
-                        <td className="py-2 text-center">
+                      <td className="py-2 text-center">
+                        {user && (
                           <Button variant="ghost" size="sm" onClick={() => openUpdate(item)} className="h-6 px-2 text-xs text-yellow-400 hover:text-yellow-300">
                             更新结果
                           </Button>
-                        </td>
-                      )}
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

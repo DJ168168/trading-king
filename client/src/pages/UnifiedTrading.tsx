@@ -414,22 +414,17 @@ export default function UnifiedTrading() {
         ))}
       </div>
 
-      {/* 持仓列表 */}
-      {activeTab === "positions" && (
+      {/* 持仓列表 - 模拟模式 */}
+      {activeTab === "positions" && mode === "paper" && (
         <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
           <div className="p-3 border-b border-[var(--color-border)] flex items-center justify-between">
-            <span className="text-sm font-medium">
-              {mode === "paper" ? "模拟持仓" : `${currentExchange?.name ?? "全部"} 实盘持仓`}
-            </span>
-            <span className="text-xs text-[var(--color-muted)]">
-              {mode === "paper" ? (paperPositions?.length ?? 0) : (allPositions?.length ?? 0)} 个持仓
-            </span>
+            <span className="text-sm font-medium">模拟持仓</span>
+            <span className="text-xs text-[var(--color-muted)]">{paperPositions?.length ?? 0} 个持仓</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-[var(--color-muted)] text-xs">
-                  {mode === "live" && <th className="text-left p-3">交易所</th>}
                   <th className="text-left p-3">币种</th>
                   <th className="text-left p-3">方向</th>
                   <th className="text-right p-3">数量</th>
@@ -441,81 +436,107 @@ export default function UnifiedTrading() {
                 </tr>
               </thead>
               <tbody>
-                {mode === "paper" ? (
-                  paperPositions && paperPositions.length > 0 ? (
-                    paperPositions.map(pos => (
-                      <tr key={pos.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-border)]/20">
-                        <td className="p-3 font-medium">{pos.symbol}</td>
-                        <td className="p-3">
-                          <span className={cn(
-                            "px-2 py-0.5 rounded text-xs font-medium",
-                            pos.direction === "long" ? "bg-green-500/10 text-[var(--color-profit)]" : "bg-red-500/10 text-[var(--color-loss)]"
-                          )}>
-                            {pos.direction === "long" ? "做多" : "做空"}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right">{pos.quantity.toFixed(4)}</td>
-                        <td className="p-3 text-right">${pos.entryPrice.toFixed(2)}</td>
-                        <td className="p-3 text-right">${pos.currentPrice.toFixed(2)}</td>
-                        <td className={cn("p-3 text-right font-medium", (pos.unrealizedPnl ?? 0) >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]")}>
-                          {(pos.unrealizedPnl ?? 0) >= 0 ? "+" : ""}{(pos.unrealizedPnl ?? 0).toFixed(2)}
-                        </td>
-                        <td className="p-3 text-right">{pos.leverage ?? 5}x</td>
-                        <td className="p-3 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => paperClosePosition.mutate({ positionId: pos.id })}
-                            className="text-xs border-[var(--color-loss)]/30 text-[var(--color-loss)] hover:bg-[var(--color-loss)]/10"
-                          >
-                            平仓
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr><td colSpan={9} className="p-8 text-center text-[var(--color-muted)]">暂无持仓</td></tr>
-                  )
+                {paperPositions && paperPositions.length > 0 ? (
+                  paperPositions.map(pos => (
+                    <tr key={pos.id} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-border)]/20">
+                      <td className="p-3 font-medium">{pos.symbol}</td>
+                      <td className="p-3">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-xs font-medium",
+                          pos.direction === "long" ? "bg-green-500/10 text-[var(--color-profit)]" : "bg-red-500/10 text-[var(--color-loss)]"
+                        )}>
+                          {pos.direction === "long" ? "做多" : "做空"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">{pos.quantity.toFixed(4)}</td>
+                      <td className="p-3 text-right">${pos.entryPrice.toFixed(2)}</td>
+                      <td className="p-3 text-right">${pos.currentPrice.toFixed(2)}</td>
+                      <td className={cn("p-3 text-right font-medium", (pos.unrealizedPnl ?? 0) >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]")}>
+                        {(pos.unrealizedPnl ?? 0) >= 0 ? "+" : ""}{(pos.unrealizedPnl ?? 0).toFixed(2)}
+                      </td>
+                      <td className="p-3 text-right">{pos.leverage ?? 5}x</td>
+                      <td className="p-3 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => paperClosePosition.mutate({ positionId: pos.id })}
+                          className="text-xs border-[var(--color-loss)]/30 text-[var(--color-loss)] hover:bg-[var(--color-loss)]/10"
+                        >
+                          平仓
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
                 ) : (
-                  allPositions && allPositions.length > 0 ? (
-                    allPositions.filter(p => selectedExchange === "binance" || p.exchange === selectedExchange || true).map((pos, i) => (
-                      <tr key={i} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-border)]/20">
-                        <td className="p-3">
-                          <span className={cn("text-xs font-medium", EXCHANGES.find(e => e.id === pos.exchange)?.color)}>
-                            {EXCHANGES.find(e => e.id === pos.exchange)?.name ?? pos.exchange}
-                          </span>
-                        </td>
-                        <td className="p-3 font-medium">{pos.symbol}</td>
-                        <td className="p-3">
-                          <span className={cn(
-                            "px-2 py-0.5 rounded text-xs font-medium",
-                            pos.side === "long" || pos.side === "buy" ? "bg-green-500/10 text-[var(--color-profit)]" : "bg-red-500/10 text-[var(--color-loss)]"
-                          )}>
-                            {pos.side === "long" || pos.side === "buy" ? "做多" : "做空"}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right">{parseFloat(pos.size).toFixed(4)}</td>
-                        <td className="p-3 text-right">${parseFloat(pos.entryPrice).toFixed(2)}</td>
-                        <td className="p-3 text-right">-</td>
-                        <td className={cn("p-3 text-right font-medium", parseFloat(pos.unrealizedPnl) >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]")}>
-                          {parseFloat(pos.unrealizedPnl) >= 0 ? "+" : ""}{parseFloat(pos.unrealizedPnl).toFixed(2)}
-                        </td>
-                        <td className="p-3 text-right">{pos.leverage}x</td>
-                        <td className="p-3 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs border-[var(--color-loss)]/30 text-[var(--color-loss)] hover:bg-[var(--color-loss)]/10"
-                            onClick={() => handleLiveClosePosition(pos)}
-                          >
-                            平仓
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr><td colSpan={9} className="p-8 text-center text-[var(--color-muted)]">暂无持仓</td></tr>
-                  )
+                  <tr><td colSpan={8} className="p-8 text-center text-[var(--color-muted)]">暂无持仓</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 持仓列表 - 实盘模式 */}
+      {activeTab === "positions" && mode === "live" && (
+        <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] overflow-hidden">
+          <div className="p-3 border-b border-[var(--color-border)] flex items-center justify-between">
+            <span className="text-sm font-medium">{currentExchange?.name ?? "全部"} 实盘持仓</span>
+            <span className="text-xs text-[var(--color-muted)]">{allPositions?.length ?? 0} 个持仓</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-border)] text-[var(--color-muted)] text-xs">
+                  <th className="text-left p-3">交易所</th>
+                  <th className="text-left p-3">币种</th>
+                  <th className="text-left p-3">方向</th>
+                  <th className="text-right p-3">数量</th>
+                  <th className="text-right p-3">开仓价</th>
+                  <th className="text-right p-3">当前价</th>
+                  <th className="text-right p-3">未实现盈亏</th>
+                  <th className="text-right p-3">杠杆</th>
+                  <th className="text-right p-3">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allPositions && allPositions.length > 0 ? (
+                  allPositions.map((pos, i) => (
+                    <tr key={i} className="border-b border-[var(--color-border)]/50 hover:bg-[var(--color-border)]/20">
+                      <td className="p-3">
+                        <span className={cn("text-xs font-medium", EXCHANGES.find(e => e.id === pos.exchange)?.color)}>
+                          {EXCHANGES.find(e => e.id === pos.exchange)?.name ?? pos.exchange}
+                        </span>
+                      </td>
+                      <td className="p-3 font-medium">{pos.symbol}</td>
+                      <td className="p-3">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-xs font-medium",
+                          pos.side === "long" || pos.side === "buy" ? "bg-green-500/10 text-[var(--color-profit)]" : "bg-red-500/10 text-[var(--color-loss)]"
+                        )}>
+                          {pos.side === "long" || pos.side === "buy" ? "做多" : "做空"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">{parseFloat(pos.size).toFixed(4)}</td>
+                      <td className="p-3 text-right">${parseFloat(pos.entryPrice).toFixed(2)}</td>
+                      <td className="p-3 text-right">-</td>
+                      <td className={cn("p-3 text-right font-medium", parseFloat(pos.unrealizedPnl) >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]")}>
+                        {parseFloat(pos.unrealizedPnl) >= 0 ? "+" : ""}{parseFloat(pos.unrealizedPnl).toFixed(2)}
+                      </td>
+                      <td className="p-3 text-right">{pos.leverage}x</td>
+                      <td className="p-3 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs border-[var(--color-loss)]/30 text-[var(--color-loss)] hover:bg-[var(--color-loss)]/10"
+                          onClick={() => handleLiveClosePosition(pos)}
+                        >
+                          平仓
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan={9} className="p-8 text-center text-[var(--color-muted)]">暂无持仓</td></tr>
                 )}
               </tbody>
             </table>
