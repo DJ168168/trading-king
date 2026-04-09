@@ -97,3 +97,13 @@
 - [x] 统一面板实盘当前价格（对接Binance行情API，10s刷新）
 - [x] 统一面板实盘盈亏百分比（基于当前价计算%，内联显示在盈亏列）
 - [x] 设置页交易所连接状态自动检测（页面加载时静默检测，tab标题旁绿点/红点/黄色闪烁）
+
+## 新功能迭代（2026-04-09 第三轮）
+- [x] 仓位比例动态联动自动交易引擎（读取 autoTradingPositionPercent 替换固定 1%）
+- [x] 多交易所行情价格扩展（Binance → OKX → Bybit 三层备用，公开接口）
+- [x] 设置页连接状态定期刷新（setInterval 5min）
+- [x] 模拟盘引擎服务器启动时自动恢复（读取 autoTradingEnabled 字段）
+- [x] 实盘引擎事件驱动（ValueScan 信号 → autoTradingEnabled+minScoreThreshold 判断 → 下单）
+
+## 紧急Bug修复（2026-04-09）
+- [x] 修复生产环境 Cme 运行时错误（allAccounts/allPositions改为publicProcedure+全面防御性数据处理）

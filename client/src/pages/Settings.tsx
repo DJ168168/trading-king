@@ -172,6 +172,43 @@ export default function Settings() {
     };
   }, [activeConfig?.id]); // 仅在配置加载时检测一次
 
+  // 每 5 分钟定期刷新连接状态
+  useEffect(() => {
+    if (!activeConfig) return;
+    const cfg = activeConfig as any;
+    const toCheck: Array<'binance' | 'okx' | 'bybit' | 'gate' | 'bitget'> = [];
+    if (cfg.binanceApiKey) toCheck.push('binance');
+    if (cfg.okxApiKey) toCheck.push('okx');
+    if (cfg.bybitApiKey) toCheck.push('bybit');
+    if (cfg.gateApiKey) toCheck.push('gate');
+    if (cfg.bitgetApiKey) toCheck.push('bitget');
+    if (toCheck.length === 0) return;
+    let cancelled = false;
+    const runRefresh = () => {
+      toCheck.forEach((ex, i) => {
+        setTimeout(async () => {
+          if (cancelled) return;
+          try {
+            let result: { success: boolean; message: string };
+            if (ex === 'binance') result = await utils.exchange.binanceTest.fetch();
+            else if (ex === 'okx') result = await utils.exchange.okxTest.fetch();
+            else if (ex === 'bybit') result = await utils.exchange.bybitTest.fetch();
+            else if (ex === 'gate') result = await utils.exchange.gateTest.fetch();
+            else result = await utils.exchange.bitgetTest.fetch();
+            if (!cancelled) setTestResults(r => ({ ...r, [ex]: { loading: false, success: result.success, message: result.message } }));
+          } catch (e: any) {
+            if (!cancelled) setTestResults(r => ({ ...r, [ex]: { loading: false, success: false, message: e.message } }));
+          }
+        }, i * 800);
+      });
+    };
+    const intervalId = setInterval(runRefresh, 5 * 60 * 1000); // 每 5 分钟
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [activeConfig?.id]);
+
   const testExchange = async (exchange: 'binance' | 'okx' | 'bybit' | 'gate' | 'bitget') => {
     setTestResults(r => ({ ...r, [exchange]: { loading: true } }));
     try {

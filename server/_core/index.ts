@@ -63,3 +63,23 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
+
+// 服务器启动后自动恢复模拟交易引擎（如果配置了 autoTradingEnabled）
+setTimeout(async () => {
+  try {
+    const { getDb } = await import('../db');
+    const { strategyConfig } = await import('../../drizzle/schema');
+    const { eq } = await import('drizzle-orm');
+    const { startPaperTradingEngine, isEngineRunning } = await import('../paperTradingEngine');
+    const db = await getDb();
+    if (!db) return;
+    const rows = await db.select().from(strategyConfig).where(eq(strategyConfig.isActive, true)).limit(1);
+    const cfg = rows[0] as any;
+    if (cfg?.autoTradingEnabled && !isEngineRunning()) {
+      startPaperTradingEngine();
+      console.log('[AutoStart] 模拟交易引擎已自动启动 (根据数据库配置)');
+    }
+  } catch (e) {
+    console.error('[AutoStart] 模拟引擎自动启动失败:', e);
+  }
+}, 3000);

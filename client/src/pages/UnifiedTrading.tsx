@@ -155,18 +155,24 @@ export default function UnifiedTrading() {
   }, [paperAccount]);
 
   const liveStats = useMemo(() => {
-    if (!allAccounts) return null;
+    if (!allAccounts || typeof allAccounts !== 'object' || Array.isArray(allAccounts)) return null;
     let totalBalance = 0;
     let connectedCount = 0;
     const pieData: { name: string; value: number; color: string }[] = [];
     const colorMap: Record<string, string> = { binance: '#F0B90B', okx: '#3B82F6', bybit: '#F97316', gate: '#22C55E', bitget: '#06B6D4' };
     EXCHANGES.forEach(ex => {
       const acc = (allAccounts as any)?.[ex.id];
-      if (acc?.connected && (acc.usdtBalance ?? 0) > 0) {
-        totalBalance += acc.usdtBalance ?? 0;
+      if (!acc || typeof acc !== 'object') return;
+      const bal = Number(acc.usdtBalance ?? 0);
+      const avail = Number(acc.availableBalance ?? 0);
+      if (acc.connected && isFinite(bal) && bal > 0) {
+        totalBalance += bal;
         connectedCount++;
-        pieData.push({ name: ex.name, value: parseFloat((acc.usdtBalance ?? 0).toFixed(2)), color: colorMap[ex.id] ?? '#888' });
+        pieData.push({ name: ex.name, value: parseFloat(bal.toFixed(2)), color: colorMap[ex.id] ?? '#888' });
       }
+      // Normalize for rendering
+      acc._bal = bal;
+      acc._avail = avail;
     });
     return { totalBalance, connectedCount, pieData };
   }, [allAccounts]);
@@ -335,10 +341,10 @@ export default function UnifiedTrading() {
                 {acc?.connected ? (
                   <>
                     <div className="text-base font-bold text-[var(--color-text)]">
-                      ${(acc.usdtBalance ?? 0).toFixed(2)}
+                      ${Number(acc.usdtBalance ?? 0).toFixed(2)}
                     </div>
                     <div className="text-xs text-[var(--color-muted)]">
-                      可用 ${(acc.availableBalance ?? 0).toFixed(2)}
+                      可用 ${Number(acc.availableBalance ?? 0).toFixed(2)}
                     </div>
                   </>
                 ) : (

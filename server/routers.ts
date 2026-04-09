@@ -125,7 +125,8 @@ export const appRouter = router({
             const exchange = (config as any)?.selectedExchange ?? 'binance';
             const symbol = confluence.symbol.endsWith('USDT') ? confluence.symbol : `${confluence.symbol}USDT`;
             const leverage = config?.leverage ?? 5;
-            const posPercent = config?.maxPositionPercent ?? 10;
+            // 使用用户设置的仓位比例（autoTradingPositionPercent，1-10%），而非全局最大仓位
+            const posPercent = Number((config as any)?.autoTradingPositionPercent ?? 1);
 
             try {
               if (exchange === 'binance' && (config as any)?.binanceApiKey) {
@@ -1397,7 +1398,7 @@ export const appRouter = router({
       }),
 
     // 获取所有交易所汇总账户信息
-    allAccounts: protectedProcedure.query(async () => {
+    allAccounts: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       const result: Record<string, any> = {};
       // Binance
@@ -1445,7 +1446,7 @@ export const appRouter = router({
     }),
 
     // 获取所有交易所汇总持仓
-    allPositions: protectedProcedure.query(async () => {
+    allPositions: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       const result: Array<{ exchange: string; symbol: string; side: string; size: string; entryPrice: string; unrealizedPnl: string; leverage: string }> = [];
       // Binance
@@ -1511,32 +1512,96 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const prices: Record<string, number> = {};
         if (!input.symbols.length) return prices;
+        const tickers = input.symbols.map(s => s.endsWith('USDT') ? s : `${s}USDT`);
+        const remaining = new Set(tickers);
+
+        // 优先尝试 Binance 合约行情（公开接口）
         try {
-          const tickers = input.symbols.map(s => s.endsWith('USDT') ? s : `${s}USDT`);
           const res = await fetch(
-            `https://fapi.binance.com/fapi/v1/ticker/price?symbols=${encodeURIComponent(JSON.stringify(tickers))}`
+            `https://fapi.binance.com/fapi/v1/ticker/price?symbols=${encodeURIComponent(JSON.stringify(Array.from(remaining)))}`
           );
           if (res.ok) {
             const data = await res.json() as Array<{ symbol: string; price: string }>;
             for (const item of data) {
-              prices[item.symbol] = parseFloat(item.price);
-              prices[item.symbol.replace(/USDT$/, '')] = parseFloat(item.price);
+              const p = parseFloat(item.price);
+              if (isFinite(p) && p > 0) {
+                prices[item.symbol] = p;
+                prices[item.symbol.replace(/USDT$/, '')] = p;
+                remaining.delete(item.symbol);
+              }
             }
-            return prices;
+            if (remaining.size === 0) return prices;
           }
         } catch {}
-        // 备用：逐个查询
-        for (const sym of input.symbols) {
+
+        // 备用： OKX 公开行情接口
+        for (const ticker of Array.from(remaining)) {
           try {
-            const ticker = sym.endsWith('USDT') ? sym : `${sym}USDT`;
-            const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${ticker}`);
+            const base = ticker.replace(/USDT$/, '');
+            const instId = `${base}-USDT-SWAP`;
+            const r = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${instId}`);
             if (r.ok) {
-              const d = await r.json() as { price: string };
-              prices[sym] = parseFloat(d.price);
-              prices[ticker] = parseFloat(d.price);
+              const d = await r.json() as { data: Array<{ last: string }> };
+              const p = parseFloat(d.data?.[0]?.last ?? '0');
+              if (isFinite(p) && p > 0) {
+                prices[ticker] = p;
+                prices[base] = p;
+                remaining.delete(ticker);
+              }
             }
           } catch {}
         }
+
+        // 备用： Bybit 公开行情接口
+        for (const ticker of Array.from(remaining)) {
+          try {
+            const r = await fetch(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${ticker}`);
+            if (r.ok) {
+              const d = await r.json() as { result: { list: Array<{ lastPrice: string }> } };
+              const p = parseFloat(d.result?.list?.[0]?.lastPrice ?? '0');
+              if (isFinite(p) && p > 0) {
+                prices[ticker] = p;
+                prices[ticker.replace(/USDT$/, '')] = p;
+                remaining.delete(ticker);
+              }
+            }
+          } catch {}
+        }
+
+        // 备用： Gate.io 公开行情接口
+        for (const ticker of Array.from(remaining)) {
+          try {
+            const base = ticker.replace(/USDT$/, '');
+            const r = await fetch(`https://api.gateio.ws/api/v4/futures/usdt/contracts/${base}_USDT`);
+            if (r.ok) {
+              const d = await r.json() as { last_price: string };
+              const p = parseFloat(d.last_price ?? '0');
+              if (isFinite(p) && p > 0) {
+                prices[ticker] = p;
+                prices[base] = p;
+                remaining.delete(ticker);
+              }
+            }
+          } catch {}
+        }
+
+        // 备用： Bitget 公开行情接口
+        for (const ticker of Array.from(remaining)) {
+          try {
+            const base = ticker.replace(/USDT$/, '');
+            const r = await fetch(`https://api.bitget.com/api/mix/v1/market/ticker?symbol=${base}USDT_UMCBL`);
+            if (r.ok) {
+              const d = await r.json() as { data: { last: string } };
+              const p = parseFloat(d.data?.last ?? '0');
+              if (isFinite(p) && p > 0) {
+                prices[ticker] = p;
+                prices[base] = p;
+                remaining.delete(ticker);
+              }
+            }
+          } catch {}
+        }
+
         return prices;
       }),
   }),
