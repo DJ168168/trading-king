@@ -119,6 +119,28 @@ export default function Settings() {
     onError: (e) => toast.error(`保存失败: ${e.message}`),
   });
 
+  // 测试连接 state
+  const [testResults, setTestResults] = useState<Record<string, { loading: boolean; success?: boolean; message?: string }>>({});
+  const utils = trpc.useUtils();
+
+  const testExchange = async (exchange: 'binance' | 'okx' | 'bybit' | 'gate' | 'bitget') => {
+    setTestResults(r => ({ ...r, [exchange]: { loading: true } }));
+    try {
+      let result: { success: boolean; message: string };
+      if (exchange === 'binance') result = await utils.exchange.binanceTest.fetch();
+      else if (exchange === 'okx') result = await utils.exchange.okxTest.fetch();
+      else if (exchange === 'bybit') result = await utils.exchange.bybitTest.fetch();
+      else if (exchange === 'gate') result = await utils.exchange.gateTest.fetch();
+      else result = await utils.exchange.bitgetTest.fetch();
+      setTestResults(r => ({ ...r, [exchange]: { loading: false, success: result.success, message: result.message } }));
+      if (result.success) toast.success(`✅ ${exchange.toUpperCase()} 连接成功: ${result.message}`);
+      else toast.error(`❌ ${exchange.toUpperCase()} 连接失败: ${result.message}`);
+    } catch (e: any) {
+      setTestResults(r => ({ ...r, [exchange]: { loading: false, success: false, message: e.message } }));
+      toast.error(`❌ ${exchange.toUpperCase()} 连接异常: ${e.message}`);
+    }
+  };
+
   const vsExpiry = useMemo(() => {
     const d = (vsAccount?.data as any)?.permissionExpired;
     if (!d) return null;
@@ -506,6 +528,18 @@ export default function Settings() {
               >
                 {saveConfigMutation.isPending ? "保存中..." : "保存 API Key"}
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => testExchange('binance')}
+                disabled={testResults['binance']?.loading}
+                className={cn(
+                  "border-border",
+                  testResults['binance']?.success === true && "border-green-500/50 text-green-400",
+                  testResults['binance']?.success === false && "border-red-500/50 text-red-400"
+                )}
+              >
+                {testResults['binance']?.loading ? "测试中..." : "测试连接"}
+              </Button>
               {binanceForm.apiKey && (
                 <Button
                   variant="outline"
@@ -516,6 +550,15 @@ export default function Settings() {
                 </Button>
               )}
             </div>
+            {testResults['binance'] && !testResults['binance'].loading && (
+              <div className={cn(
+                "flex items-center gap-2 text-xs px-3 py-2 rounded-lg mt-2",
+                testResults['binance'].success ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+              )}>
+                {testResults['binance'].success ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                {testResults['binance'].message}
+              </div>
+            )}
           </div>
 
           {/* 配置状态 */}
@@ -612,6 +655,27 @@ export default function Settings() {
             <Button onClick={() => saveFullExchangeMutation.mutate({ ...autoTradingForm, selectedExchange: autoTradingForm.selectedExchange as any, binanceApiKey: binanceForm.apiKey, binanceSecretKey: binanceForm.secretKey, binanceUseTestnet: false, okxApiKey: (activeConfig as any)?.okxApiKey ?? "", okxSecretKey: (activeConfig as any)?.okxSecretKey ?? "", okxPassphrase: (activeConfig as any)?.okxPassphrase ?? "", okxUseDemo: false, bybitApiKey: bybitForm.apiKey, bybitSecretKey: bybitForm.secretKey, bybitUseTestnet: bybitForm.useTestnet, gateApiKey: gateForm.apiKey, gateSecretKey: gateForm.secretKey, bitgetApiKey: bitgetForm.apiKey, bitgetSecretKey: bitgetForm.secretKey, bitgetPassphrase: bitgetForm.passphrase, autoTradingEnabled: autoTradingForm.enabled, minScoreThreshold: autoTradingForm.minScoreThreshold })} disabled={saveFullExchangeMutation.isPending} className="bg-primary hover:bg-primary/90">
               {saveFullExchangeMutation.isPending ? "保存中..." : "保存 Bybit 配置"}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => testExchange('bybit')}
+              disabled={testResults['bybit']?.loading}
+              className={cn(
+                "border-border",
+                testResults['bybit']?.success === true && "border-green-500/50 text-green-400",
+                testResults['bybit']?.success === false && "border-red-500/50 text-red-400"
+              )}
+            >
+              {testResults['bybit']?.loading ? "测试中..." : "测试连接"}
+            </Button>
+            {testResults['bybit'] && !testResults['bybit'].loading && (
+              <div className={cn(
+                "flex items-center gap-2 text-xs px-3 py-2 rounded-lg",
+                testResults['bybit'].success ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+              )}>
+                {testResults['bybit'].success ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                {testResults['bybit'].message}
+              </div>
+            )}
           </div>
 
           {/* Gate.io */}
@@ -636,6 +700,27 @@ export default function Settings() {
             <Button onClick={() => saveFullExchangeMutation.mutate({ ...autoTradingForm, selectedExchange: autoTradingForm.selectedExchange as any, binanceApiKey: binanceForm.apiKey, binanceSecretKey: binanceForm.secretKey, binanceUseTestnet: false, okxApiKey: (activeConfig as any)?.okxApiKey ?? "", okxSecretKey: (activeConfig as any)?.okxSecretKey ?? "", okxPassphrase: (activeConfig as any)?.okxPassphrase ?? "", okxUseDemo: false, bybitApiKey: bybitForm.apiKey, bybitSecretKey: bybitForm.secretKey, bybitUseTestnet: bybitForm.useTestnet, gateApiKey: gateForm.apiKey, gateSecretKey: gateForm.secretKey, bitgetApiKey: bitgetForm.apiKey, bitgetSecretKey: bitgetForm.secretKey, bitgetPassphrase: bitgetForm.passphrase, autoTradingEnabled: autoTradingForm.enabled, minScoreThreshold: autoTradingForm.minScoreThreshold })} disabled={saveFullExchangeMutation.isPending} className="bg-primary hover:bg-primary/90">
               {saveFullExchangeMutation.isPending ? "保存中..." : "保存 Gate.io 配置"}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => testExchange('gate')}
+              disabled={testResults['gate']?.loading}
+              className={cn(
+                "border-border",
+                testResults['gate']?.success === true && "border-green-500/50 text-green-400",
+                testResults['gate']?.success === false && "border-red-500/50 text-red-400"
+              )}
+            >
+              {testResults['gate']?.loading ? "测试中..." : "测试连接"}
+            </Button>
+            {testResults['gate'] && !testResults['gate'].loading && (
+              <div className={cn(
+                "flex items-center gap-2 text-xs px-3 py-2 rounded-lg",
+                testResults['gate'].success ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+              )}>
+                {testResults['gate'].success ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                {testResults['gate'].message}
+              </div>
+            )}
           </div>
 
           {/* Bitget */}
@@ -664,6 +749,27 @@ export default function Settings() {
             <Button onClick={() => saveFullExchangeMutation.mutate({ ...autoTradingForm, selectedExchange: autoTradingForm.selectedExchange as any, binanceApiKey: binanceForm.apiKey, binanceSecretKey: binanceForm.secretKey, binanceUseTestnet: false, okxApiKey: (activeConfig as any)?.okxApiKey ?? "", okxSecretKey: (activeConfig as any)?.okxSecretKey ?? "", okxPassphrase: (activeConfig as any)?.okxPassphrase ?? "", okxUseDemo: false, bybitApiKey: bybitForm.apiKey, bybitSecretKey: bybitForm.secretKey, bybitUseTestnet: bybitForm.useTestnet, gateApiKey: gateForm.apiKey, gateSecretKey: gateForm.secretKey, bitgetApiKey: bitgetForm.apiKey, bitgetSecretKey: bitgetForm.secretKey, bitgetPassphrase: bitgetForm.passphrase, autoTradingEnabled: autoTradingForm.enabled, minScoreThreshold: autoTradingForm.minScoreThreshold })} disabled={saveFullExchangeMutation.isPending} className="bg-primary hover:bg-primary/90">
               {saveFullExchangeMutation.isPending ? "保存中..." : "保存 Bitget 配置"}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => testExchange('bitget')}
+              disabled={testResults['bitget']?.loading}
+              className={cn(
+                "border-border",
+                testResults['bitget']?.success === true && "border-green-500/50 text-green-400",
+                testResults['bitget']?.success === false && "border-red-500/50 text-red-400"
+              )}
+            >
+              {testResults['bitget']?.loading ? "测试中..." : "测试连接"}
+            </Button>
+            {testResults['bitget'] && !testResults['bitget'].loading && (
+              <div className={cn(
+                "flex items-center gap-2 text-xs px-3 py-2 rounded-lg",
+                testResults['bitget'].success ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+              )}>
+                {testResults['bitget'].success ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                {testResults['bitget'].message}
+              </div>
+            )}
           </div>
         </div>
       )}

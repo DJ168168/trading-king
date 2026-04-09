@@ -80,3 +80,11 @@
 - [x] Telegram 信号推送配置（设置→「Telegram」 tab）
 - [x] 多交易所 API Key 配置页面（设置→「多交易所」 tab）
 - [x] 数据库迁移：新增 bybitApiKey/gateApiKey/bitgetApiKey/minScoreThreshold/autoTradingEnabled 字段
+
+## 新功能迭代（2026-04-09）
+- [x] 多交易所测试连接按钮（Bybit/Gate.io/Bitget/Binance/OKX 各自测试连接）
+- [x] 自动交易引擎联动：信号评分超过阈值时自动触发下单（5交易所全支持）
+- [x] 自动交易下单结果推送到 Telegram（含评分/阈值/下单结果）
+- [x] 统一面板持仓盈亏颜色标注（已存在）
+- [x] 统一面板一键平仓按钮（实盘，5交易所全支持）
+- [x] 统一面板多交易所持仓价值饼图分布（环形饼图+百分比）

@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 type TradingMode = "paper" | "live";
 type Exchange = "binance" | "okx" | "bybit" | "gate" | "bitget";
@@ -64,6 +65,45 @@ export default function UnifiedTrading() {
   });
 
   // 实盘下单（Binance）
+  const binanceClosePosition = trpc.exchange.binanceClosePosition.useMutation({
+    onSuccess: () => { refetchPositions(); toast.success("Binance 平仓成功"); },
+    onError: (e) => toast.error(`Binance 平仓失败: ${e.message}`),
+  });
+  const okxClosePosition = trpc.exchange.okxClosePosition.useMutation({
+    onSuccess: () => { refetchPositions(); toast.success("OKX 平仓成功"); },
+    onError: (e) => toast.error(`OKX 平仓失败: ${e.message}`),
+  });
+  const bybitClosePosition = trpc.exchange.bybitClosePosition.useMutation({
+    onSuccess: () => { refetchPositions(); toast.success("Bybit 平仓成功"); },
+    onError: (e) => toast.error(`Bybit 平仓失败: ${e.message}`),
+  });
+  const gateClosePosition = trpc.exchange.gateClosePosition.useMutation({
+    onSuccess: () => { refetchPositions(); toast.success("Gate.io 平仓成功"); },
+    onError: (e) => toast.error(`Gate.io 平仓失败: ${e.message}`),
+  });
+  const bitgetClosePosition = trpc.exchange.bitgetClosePosition.useMutation({
+    onSuccess: () => { refetchPositions(); toast.success("Bitget 平仓成功"); },
+    onError: (e) => toast.error(`Bitget 平仓失败: ${e.message}`),
+  });
+
+  const handleLiveClosePosition = (pos: { exchange: string; symbol: string; side: string; size: string }) => {
+    const confirmClose = window.confirm(`确认平仓 ${pos.exchange.toUpperCase()} ${pos.symbol} ${pos.side === 'long' || pos.side === 'buy' ? '做多' : '做空'} ${pos.size}?`);
+    if (!confirmClose) return;
+    if (pos.exchange === 'binance') {
+      binanceClosePosition.mutate({ symbol: pos.symbol });
+    } else if (pos.exchange === 'okx') {
+      const okxSymbol = pos.symbol.replace('USDT', '-USDT-SWAP');
+      okxClosePosition.mutate({ symbol: okxSymbol });
+    } else if (pos.exchange === 'bybit') {
+      bybitClosePosition.mutate({ symbol: pos.symbol, side: pos.side === 'long' || pos.side === 'buy' ? 'Sell' : 'Buy', qty: pos.size });
+    } else if (pos.exchange === 'gate') {
+      const contract = pos.symbol.replace('USDT', '_USDT');
+      gateClosePosition.mutate({ contract, size: parseFloat(pos.size) });
+    } else if (pos.exchange === 'bitget') {
+      bitgetClosePosition.mutate({ symbol: pos.symbol, side: pos.side === 'long' || pos.side === 'buy' ? 'sell' : 'buy', size: pos.size });
+    }
+  };
+
   const binancePlaceOrder = trpc.exchange.binancePlaceOrder.useMutation({
     onSuccess: () => { refetchPositions(); toast.success("Binance 下单成功"); setShowOrderForm(false); },
     onError: (e) => toast.error(`Binance 下单失败: ${e.message}`),
@@ -108,13 +148,17 @@ export default function UnifiedTrading() {
     if (!allAccounts) return null;
     let totalBalance = 0;
     let connectedCount = 0;
-    Object.values(allAccounts).forEach((acc: any) => {
-      if (acc.connected) {
+    const pieData: { name: string; value: number; color: string }[] = [];
+    const colorMap: Record<string, string> = { binance: '#F0B90B', okx: '#3B82F6', bybit: '#F97316', gate: '#22C55E', bitget: '#06B6D4' };
+    EXCHANGES.forEach(ex => {
+      const acc = (allAccounts as any)?.[ex.id];
+      if (acc?.connected && (acc.usdtBalance ?? 0) > 0) {
         totalBalance += acc.usdtBalance ?? 0;
         connectedCount++;
+        pieData.push({ name: ex.name, value: parseFloat((acc.usdtBalance ?? 0).toFixed(2)), color: colorMap[ex.id] ?? '#888' });
       }
     });
-    return { totalBalance, connectedCount };
+    return { totalBalance, connectedCount, pieData };
   }, [allAccounts]);
 
   // 下单处理
@@ -296,6 +340,57 @@ export default function UnifiedTrading() {
         </div>
       )}
 
+      {/* 实盘持仓价值饮图 */}
+      {mode === "live" && liveStats && liveStats.pieData.length > 0 && (
+        <div className="bg-[var(--color-card)] rounded-lg border border-[var(--color-border)] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium">多交易所资金分布</span>
+            <span className="text-xs text-[var(--color-muted)]">总计 ${liveStats.totalBalance.toFixed(2)} USDT</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="w-40 h-40 flex-shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={liveStats.pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={35}
+                    outerRadius={65}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {liveStats.pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number) => [`$${value.toFixed(2)}`, 'USDT']}
+                    contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 space-y-2">
+              {liveStats.pieData.map(item => (
+                <div key={item.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                    <span className="text-xs text-[var(--color-muted)]">{item.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-medium text-[var(--color-text)]">${item.value.toFixed(2)}</span>
+                    <span className="text-xs text-[var(--color-muted)] ml-1">
+                      ({liveStats.totalBalance > 0 ? (item.value / liveStats.totalBalance * 100).toFixed(1) : 0}%)
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 标签页 */}
       <div className="flex gap-1 border-b border-[var(--color-border)]">
         {[
@@ -407,7 +502,12 @@ export default function UnifiedTrading() {
                         </td>
                         <td className="p-3 text-right">{pos.leverage}x</td>
                         <td className="p-3 text-right">
-                          <Button size="sm" variant="outline" className="text-xs border-[var(--color-loss)]/30 text-[var(--color-loss)] hover:bg-[var(--color-loss)]/10" onClick={() => toast.info("请在交易所官网平仓")}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs border-[var(--color-loss)]/30 text-[var(--color-loss)] hover:bg-[var(--color-loss)]/10"
+                            onClick={() => handleLiveClosePosition(pos)}
+                          >
                             平仓
                           </Button>
                         </td>

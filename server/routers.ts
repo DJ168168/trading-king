@@ -92,7 +92,7 @@ export const appRouter = router({
 
         // 当有聚合信号时，运行 6 大高胜率策略引擎评估
         let strategyResult = null;
-        if (confluence && config?.autoTradingEnabled) {
+        if (confluence) {
           const recentSigs = await getRecentSignals(100);
           const oneHourAgo = Date.now() - 3600000;
           const recentHour = recentSigs.filter(s => new Date(s.createdAt).getTime() > oneHourAgo);
@@ -113,20 +113,90 @@ export const appRouter = router({
           });
           strategyResult = evaluateStrategies(ctx);
 
-          // 发送 Telegram 通知（聚合信号触发时）
+          // 自动交易引擎联动：评分超过阈值时自动下单
+          let autoTradeResult: { success: boolean; message: string } | null = null;
+          const scorePercent = Math.round(confluence.score * 100);
+          const minThreshold = (config as any)?.minScoreThreshold ?? 60;
+          const shouldAutoTrade = config?.autoTradingEnabled && scorePercent >= minThreshold;
+
+          if (shouldAutoTrade) {
+            const triggeredStrategy = strategyResult?.allResults?.find((r: any) => r.triggered);
+            const direction: 'long' | 'short' = triggeredStrategy?.direction === 'short' ? 'short' : 'long';
+            const exchange = (config as any)?.selectedExchange ?? 'binance';
+            const symbol = confluence.symbol.endsWith('USDT') ? confluence.symbol : `${confluence.symbol}USDT`;
+            const leverage = config?.leverage ?? 5;
+            const posPercent = config?.maxPositionPercent ?? 10;
+
+            try {
+              if (exchange === 'binance' && (config as any)?.binanceApiKey) {
+                const svc = createBinanceService((config as any).binanceApiKey, (config as any).binanceSecretKey ?? '', (config as any).binanceUseTestnet ?? false);
+                const bal = await svc.getUSDTBalance();
+                const qty = Math.max(10, bal.balance * posPercent / 100) / leverage;
+                const qtyRounded = Math.floor(qty * 1000) / 1000;
+                if (direction === 'long') await svc.openLong(symbol, qtyRounded, leverage);
+                else await svc.openShort(symbol, qtyRounded, leverage);
+                autoTradeResult = { success: true, message: `Binance ${direction === 'long' ? '做多' : '做空'} ${symbol} qty=${qtyRounded}` };
+              } else if (exchange === 'okx' && (config as any)?.okxApiKey) {
+                const svc = createOKXService((config as any).okxApiKey, (config as any).okxSecretKey ?? '', (config as any).okxPassphrase ?? '', (config as any).okxUseDemo ?? false);
+                const bal = await svc.getBalance('USDT');
+                const notional = Math.max(10, bal.balance * posPercent / 100);
+                const instId = `${symbol.replace('USDT','')}-USDT-SWAP`;
+                await svc.placeOrder({ instId, tdMode: 'cross', side: direction === 'long' ? 'buy' : 'sell', posSide: direction === 'long' ? 'long' : 'short', ordType: 'market', sz: String(Math.floor(notional / leverage)) });
+                autoTradeResult = { success: true, message: `OKX ${direction === 'long' ? '做多' : '做空'} ${instId}` };
+              } else if (exchange === 'bybit' && (config as any)?.bybitApiKey) {
+                const svc = createBybitService({ apiKey: (config as any).bybitApiKey, secretKey: (config as any).bybitSecretKey ?? '', useTestnet: (config as any).bybitUseTestnet ?? false });
+                const balList = await svc.getBalance();
+                const usdtBal = Number(balList.find((c: any) => c.coin === 'USDT')?.walletBalance ?? 0);
+                const qty = Math.max(10, usdtBal * posPercent / 100) / leverage;
+                await svc.setLeverage('linear', symbol, String(leverage), String(leverage));
+                await svc.placeOrder({ category: 'linear', symbol, side: direction === 'long' ? 'Buy' : 'Sell', orderType: 'Market', qty: String(Math.floor(qty * 1000) / 1000) });
+                autoTradeResult = { success: true, message: `Bybit ${direction === 'long' ? '做多' : '做空'} ${symbol}` };
+              } else if (exchange === 'gate' && (config as any)?.gateApiKey) {
+                const svc = createGateService({ apiKey: (config as any).gateApiKey, secretKey: (config as any).gateSecretKey ?? '' });
+                const bal = await svc.getBalance();
+                const notional = Math.max(10, Number(bal?.total ?? 0) * posPercent / 100);
+                const size = Math.floor(notional / leverage) * (direction === 'long' ? 1 : -1);
+                await svc.placeOrder('usdt', { contract: symbol, size, price: '0', tif: 'ioc' });
+                autoTradeResult = { success: true, message: `Gate.io ${direction === 'long' ? '做多' : '做空'} ${symbol}` };
+              } else if (exchange === 'bitget' && (config as any)?.bitgetApiKey) {
+                const svc = createBitgetService({ apiKey: (config as any).bitgetApiKey, secretKey: (config as any).bitgetSecretKey ?? '', passphrase: (config as any).bitgetPassphrase ?? '' });
+                const bal = await svc.getBalance();
+                const notional = Math.max(10, Number(bal?.available ?? 0) * posPercent / 100);
+                await svc.placeOrder({ symbol, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', size: String(Math.floor(notional / leverage * 1000) / 1000), side: direction === 'long' ? 'buy' : 'sell', tradeSide: 'open', orderType: 'market' });
+                autoTradeResult = { success: true, message: `Bitget ${direction === 'long' ? '做多' : '做空'} ${symbol}` };
+              } else {
+                autoTradeResult = { success: false, message: '未配置该交易所 API Key' };
+              }
+            } catch (e: any) {
+              autoTradeResult = { success: false, message: `下单失败: ${e.message ?? '未知错误'}` };
+            }
+          }
+
+          // 发送 Telegram 通知（聚合信号触发时必定发送）
           try {
             const tgConfig = await getTelegramConfig();
             if (tgConfig?.botToken && tgConfig?.chatId && tgConfig?.enableTradeNotify) {
-              const triggered = strategyResult?.triggered;
               const triggeredStrategy = strategyResult?.allResults?.find((r: any) => r.triggered);
-              const scorePercent = Math.round(confluence.score * 100);
-              const direction = triggeredStrategy?.direction === 'long' ? '📈 做多' : triggeredStrategy?.direction === 'short' ? '📉 做空' : '⚡ 聚合信号';
-              const strategyName = triggeredStrategy ? `\n🎯 触发策略: <b>${triggeredStrategy.strategyName}</b> (胜率${Math.round(triggeredStrategy.winRate * 100)}%)` : '';
-              const msg = `🚀 <b>勇少交易之王 - 信号聚合</b>\n\n` +
+              const scorePercent2 = Math.round(confluence.score * 100);
+              const minThreshold2 = (config as any)?.minScoreThreshold ?? 60;
+              const strategyName = triggeredStrategy ? `\n🎯 策略: <b>${triggeredStrategy.strategyName}</b> (胜率${Math.round(triggeredStrategy.winRate * 100)}%)` : '';
+              let tradeStatus: string;
+              if (!config?.autoTradingEnabled) {
+                tradeStatus = '⚪️ 自动交易未开启';
+              } else if (scorePercent2 < minThreshold2) {
+                tradeStatus = `⚠️ 评分 ${scorePercent2}% < 阈值 ${minThreshold2}%，未下单`;
+              } else if (autoTradeResult?.success) {
+                tradeStatus = `✅ 自动下单: ${autoTradeResult.message}`;
+              } else if (autoTradeResult) {
+                tradeStatus = `❌ ${autoTradeResult.message}`;
+              } else {
+                tradeStatus = '⚠️ 交易所未配置';
+              }
+              const msg = `🚀 <b>勇少交易之王</b>\n\n` +
                 `💎 <b>${confluence.symbol}</b> FOMO+Alpha 共振\n` +
-                `📊 聚合评分: <b>${scorePercent}%</b>\n` +
-                `⏱ 时间差: ${confluence.timeGap.toFixed(1)}s${strategyName}\n` +
-                `${triggered ? '✅ 策略门控通过，自动交易已触发' : '⚠️ 策略条件未完全满足，未自动开仓'}\n` +
+                `📊 评分: <b>${scorePercent2}%</b> (阈值 ${minThreshold2}%)${strategyName}\n` +
+                `⏱ 时间差: ${confluence.timeGap.toFixed(1)}s\n` +
+                `${tradeStatus}\n` +
                 `🕐 ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
               await fetch(`https://api.telegram.org/bot${tgConfig.botToken}/sendMessage`, {
                 method: 'POST',
@@ -1004,6 +1074,32 @@ export const appRouter = router({
         return svc.cancelOrder(input.symbol, input.orderId);
       }),
 
+    // 测试 Binance 连接
+    binanceTest: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.binanceApiKey) return { success: false, message: "请先配置 Binance API Key" };
+      try {
+        const svc = createBinanceService(cfg.binanceApiKey, cfg.binanceSecretKey ?? "", cfg.binanceUseTestnet ?? false);
+        const ok = await svc.ping();
+        if (!ok) return { success: false, message: "Binance 连接失败" };
+        const bal = await svc.getUSDTBalance();
+        return { success: true, message: `连接成功，USDT 余额: ${bal.balance.toFixed(2)}` };
+      } catch (e: any) {
+        return { success: false, message: e.message ?? "连接失败" };
+      }
+    }),
+    // 测试 OKX 连接
+    okxTest: protectedProcedure.query(async () => {
+      const cfg = await getActiveConfig();
+      if (!cfg?.okxApiKey) return { success: false, message: "请先配置 OKX API Key" };
+      try {
+        const svc = createOKXService(cfg.okxApiKey, cfg.okxSecretKey ?? "", cfg.okxPassphrase ?? "", cfg.okxUseDemo ?? false);
+        const bal = await svc.getBalance('USDT');
+        return { success: true, message: `连接成功，USDT 余额: ${bal.balance.toFixed(2)}` };
+      } catch (e: any) {
+        return { success: false, message: e.message ?? "连接失败" };
+      }
+    }),
     // 更新交易所配置（API Key + 交易所选择）
     saveExchangeConfig: protectedProcedure
       .input(z.object({
@@ -1184,6 +1280,15 @@ export const appRouter = router({
         return svc.closePosition("linear", input.symbol, input.side, input.qty);
       }),
 
+    // Gate.io 平仓
+    gateClosePosition: protectedProcedure
+      .input(z.object({ contract: z.string(), size: z.number() }))
+      .mutation(async ({ input }) => {
+        const cfg = await getActiveConfig();
+        if (!cfg?.gateApiKey) throw new Error("请先配置 Gate.io API Key");
+        const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
+        return svc.closePosition('usdt', input.contract, input.size);
+      }),
     // 测试 Gate.io 连接
     gateTest: protectedProcedure.query(async () => {
       const cfg = await getActiveConfig();
@@ -1229,6 +1334,15 @@ export const appRouter = router({
         });
       }),
 
+    // Bitget 平仓
+    bitgetClosePosition: protectedProcedure
+      .input(z.object({ symbol: z.string(), side: z.enum(['buy', 'sell']), size: z.string() }))
+      .mutation(async ({ input }) => {
+        const cfg = await getActiveConfig();
+        if (!cfg?.bitgetApiKey) throw new Error("请先配置 Bitget API Key");
+        const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
+        return svc.placeOrder({ symbol: input.symbol, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', size: input.size, side: input.side, tradeSide: 'close', orderType: 'market' });
+      }),
     // 测试 Bitget 连接
     bitgetTest: protectedProcedure.query(async () => {
       const cfg = await getActiveConfig();
