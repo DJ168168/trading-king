@@ -29,6 +29,13 @@
       "when": 1775731963408,
       "tag": "0003_slim_phil_sheldon",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1775735644493,
+      "tag": "0004_lethal_nighthawk",
+      "breakpoints": true
     }
   ]
 }

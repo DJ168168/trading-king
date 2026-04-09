@@ -72,7 +72,7 @@ export default function Settings() {
   const [bybitForm, setBybitForm] = useState({ apiKey: "", secretKey: "", showSecret: false, useTestnet: false });
   const [gateForm, setGateForm] = useState({ apiKey: "", secretKey: "", showSecret: false });
   const [bitgetForm, setBitgetForm] = useState({ apiKey: "", secretKey: "", passphrase: "", showSecret: false });
-  const [autoTradingForm, setAutoTradingForm] = useState({ enabled: false, minScoreThreshold: 60, selectedExchange: "binance" as string });
+  const [autoTradingForm, setAutoTradingForm] = useState({ enabled: false, minScoreThreshold: 60, positionPercent: 1, selectedExchange: "binance" as string });
 
   const { data: vsAccount, isLoading: vsLoading } = trpc.valueScan.accountInfo.useQuery();
   const { data: fearGreed } = trpc.valueScan.fearGreed.useQuery();
@@ -99,7 +99,7 @@ export default function Settings() {
       setBybitForm(f => ({ ...f, apiKey: cfg.bybitApiKey ?? "", secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false }));
       setGateForm(f => ({ ...f, apiKey: cfg.gateApiKey ?? "", secretKey: cfg.gateSecretKey ?? "" }));
       setBitgetForm(f => ({ ...f, apiKey: cfg.bitgetApiKey ?? "", secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" }));
-      setAutoTradingForm({ enabled: cfg.autoTradingEnabled ?? false, minScoreThreshold: cfg.minScoreThreshold ?? 60, selectedExchange: cfg.selectedExchange ?? "binance" });
+      setAutoTradingForm({ enabled: cfg.autoTradingEnabled ?? false, minScoreThreshold: cfg.minScoreThreshold ?? 60, positionPercent: (cfg as any).autoTradingPositionPercent ?? 1, selectedExchange: cfg.selectedExchange ?? "binance" });
     }
   }, [activeConfig]);
 
@@ -122,6 +122,55 @@ export default function Settings() {
   // 测试连接 state
   const [testResults, setTestResults] = useState<Record<string, { loading: boolean; success?: boolean; message?: string }>>({});
   const utils = trpc.useUtils();
+
+  // 页面加载时静默检测所有已配置交易所的连通性
+  useEffect(() => {
+    if (!activeConfig) return;
+    const cfg = activeConfig as any;
+    const toCheck: Array<'binance' | 'okx' | 'bybit' | 'gate' | 'bitget'> = [];
+    if (cfg.binanceApiKey) toCheck.push('binance');
+    if (cfg.okxApiKey) toCheck.push('okx');
+    if (cfg.bybitApiKey) toCheck.push('bybit');
+    if (cfg.gateApiKey) toCheck.push('gate');
+    if (cfg.bitgetApiKey) toCheck.push('bitget');
+    // 未配置 API Key 的交易所显示灰色占位符
+    const allExchanges: Array<'binance' | 'okx' | 'bybit' | 'gate' | 'bitget'> = ['binance', 'okx', 'bybit', 'gate', 'bitget'];
+    allExchanges.forEach(ex => {
+      if (!toCheck.includes(ex)) {
+        setTestResults(r => ({ ...r, [ex]: { loading: false, success: undefined, message: '未配置 API Key' } }));
+      }
+    });
+    let cancelled = false;
+    const allTimers: ReturnType<typeof setTimeout>[] = [];
+    // 静默检测（不显示 toast）
+    const silentTest = async (exchange: 'binance' | 'okx' | 'bybit' | 'gate' | 'bitget') => {
+      if (cancelled) return;
+      setTestResults(r => ({ ...r, [exchange]: { loading: true } }));
+      try {
+        let result: { success: boolean; message: string };
+        if (exchange === 'binance') result = await utils.exchange.binanceTest.fetch();
+        else if (exchange === 'okx') result = await utils.exchange.okxTest.fetch();
+        else if (exchange === 'bybit') result = await utils.exchange.bybitTest.fetch();
+        else if (exchange === 'gate') result = await utils.exchange.gateTest.fetch();
+        else result = await utils.exchange.bitgetTest.fetch();
+        if (!cancelled) setTestResults(r => ({ ...r, [exchange]: { loading: false, success: result.success, message: result.message } }));
+      } catch (e: any) {
+        if (!cancelled) setTestResults(r => ({ ...r, [exchange]: { loading: false, success: false, message: e.message } }));
+      }
+    };
+    // 延迟 1s 后逐个检测，避免页面加载时并发请求过多
+    const outerTimer = setTimeout(() => {
+      toCheck.forEach((ex, i) => {
+        const t = setTimeout(() => silentTest(ex), i * 800);
+        allTimers.push(t);
+      });
+    }, 1000);
+    allTimers.push(outerTimer);
+    return () => {
+      cancelled = true;
+      allTimers.forEach(t => clearTimeout(t));
+    };
+  }, [activeConfig?.id]); // 仅在配置加载时检测一次
 
   const testExchange = async (exchange: 'binance' | 'okx' | 'bybit' | 'gate' | 'bitget') => {
     setTestResults(r => ({ ...r, [exchange]: { loading: true } }));
@@ -156,13 +205,33 @@ export default function Settings() {
     return role;
   }, [vsAccount]);
 
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  // 交易所连接状态指示点
+  const getExchangeDot = (exchange: string) => {
+    const r = testResults[exchange];
+    if (!r) return null;
+    if (r.loading) return <span title="检测中..." className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse inline-block ml-1" />;
+    if (r.success === undefined) return <span title="未配置 API Key" className="w-2 h-2 rounded-full bg-gray-400 inline-block ml-1" />;
+    return r.success
+      ? <span title="连接正常" className="w-2 h-2 rounded-full bg-green-400 inline-block ml-1" />
+      : <span title={r.message ?? '连接失败'} className="w-2 h-2 rounded-full bg-red-400 inline-block ml-1" />;
+  };
+
+  const tabs: { key: TabKey; label: string; icon: React.ReactNode; dot?: React.ReactNode }[] = [
     { key: "chart", label: "TV 图表", icon: <TvMinimal className="w-3.5 h-3.5" /> },
     { key: "valuescan", label: "ValueScan", icon: <Activity className="w-3.5 h-3.5" /> },
     { key: "telegram", label: "Telegram", icon: <Bell className="w-3.5 h-3.5" /> },
     { key: "market", label: "市场概览", icon: <BarChart2 className="w-3.5 h-3.5" /> },
-    { key: "binance", label: "币安 API", icon: <Key className="w-3.5 h-3.5" /> },
-    { key: "exchanges", label: "多交易所", icon: <Key className="w-3.5 h-3.5" /> },
+    { key: "binance", label: "币安 API", icon: <Key className="w-3.5 h-3.5" />, dot: getExchangeDot('binance') },
+    { key: "exchanges", label: "多交易所", icon: <Key className="w-3.5 h-3.5" />, dot: (() => {
+      const dots = ['bybit','gate','bitget','okx'].map(ex => testResults[ex]);
+      const anyLoading = dots.some(d => d?.loading);
+      const anyFail = dots.some(d => d && !d.loading && !d.success);
+      const allOk = dots.filter(Boolean).length > 0 && dots.filter(Boolean).every(d => d?.success);
+      if (anyLoading) return <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse inline-block ml-1" />;
+      if (anyFail) return <span className="w-2 h-2 rounded-full bg-red-400 inline-block ml-1" />;
+      if (allOk) return <span className="w-2 h-2 rounded-full bg-green-400 inline-block ml-1" />;
+      return null;
+    })() },
     { key: "autotrading", label: "自动交易", icon: <Activity className="w-3.5 h-3.5" /> },
   ];
 
@@ -191,7 +260,7 @@ export default function Settings() {
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            {tab.icon}{tab.label}
+            {tab.icon}{tab.label}{tab.dot}
           </button>
         ))}
       </div>
@@ -820,6 +889,29 @@ export default function Settings() {
               <p className="text-xs text-muted-foreground">评分高于此阈值的信号才会触发自动交易。建议设置 60-75 分，过低会频繁交易，过高会错过机会。</p>
             </div>
 
+            {/* 每笔仓位比例 */}
+            <div className="p-4 bg-background/50 rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-foreground">每笔仓位比例</p>
+                <span className="text-lg font-bold text-primary">{autoTradingForm.positionPercent}%</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={0.5}
+                value={autoTradingForm.positionPercent}
+                onChange={e => setAutoTradingForm(f => ({ ...f, positionPercent: parseFloat(e.target.value) }))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>1% (保守)</span>
+                <span className="text-yellow-400">3% (建议)</span>
+                <span>10% (高风险)</span>
+              </div>
+              <p className="text-xs text-muted-foreground">每笔自动交易使用账户余额的此比例开仓。建议 1%-5%，账户资金越小建议设置越低。</p>
+            </div>
+
             {/* 默认交易所 */}
             <div className="p-4 bg-background/50 rounded-lg space-y-2">
               <p className="text-sm font-medium text-foreground">默认交易所</p>
@@ -861,6 +953,7 @@ export default function Settings() {
                 bitgetPassphrase: bitgetForm.passphrase,
                 autoTradingEnabled: autoTradingForm.enabled,
                 minScoreThreshold: autoTradingForm.minScoreThreshold,
+                autoTradingPositionPercent: autoTradingForm.positionPercent,
               })}
               disabled={saveFullExchangeMutation.isPending}
               className="w-full bg-primary hover:bg-primary/90"

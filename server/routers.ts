@@ -1190,6 +1190,7 @@ export const appRouter = router({
         bitgetPassphrase: z.string().default(""),
         autoTradingEnabled: z.boolean().default(false),
         minScoreThreshold: z.number().min(0).max(100).default(60),
+        autoTradingPositionPercent: z.number().min(1).max(10).default(1),
       }))
       .mutation(async ({ input }) => {
         const existing = await getActiveConfig();
@@ -1212,6 +1213,7 @@ export const appRouter = router({
           bitgetPassphrase: input.bitgetPassphrase,
           autoTradingEnabled: input.autoTradingEnabled,
           minScoreThreshold: input.minScoreThreshold,
+          autoTradingPositionPercent: input.autoTradingPositionPercent,
         };
         if (existing) {
           await updateStrategyConfig(existing.id, updateData);
@@ -1502,6 +1504,41 @@ export const appRouter = router({
       }
       return result;
     }),
+
+    // 批量获取当前价格（优先用 Binance 公开行情接口）
+    getTickerPrices: publicProcedure
+      .input(z.object({ symbols: z.array(z.string()) }))
+      .query(async ({ input }) => {
+        const prices: Record<string, number> = {};
+        if (!input.symbols.length) return prices;
+        try {
+          const tickers = input.symbols.map(s => s.endsWith('USDT') ? s : `${s}USDT`);
+          const res = await fetch(
+            `https://fapi.binance.com/fapi/v1/ticker/price?symbols=${encodeURIComponent(JSON.stringify(tickers))}`
+          );
+          if (res.ok) {
+            const data = await res.json() as Array<{ symbol: string; price: string }>;
+            for (const item of data) {
+              prices[item.symbol] = parseFloat(item.price);
+              prices[item.symbol.replace(/USDT$/, '')] = parseFloat(item.price);
+            }
+            return prices;
+          }
+        } catch {}
+        // 备用：逐个查询
+        for (const sym of input.symbols) {
+          try {
+            const ticker = sym.endsWith('USDT') ? sym : `${sym}USDT`;
+            const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${ticker}`);
+            if (r.ok) {
+              const d = await r.json() as { price: string };
+              prices[sym] = parseFloat(d.price);
+              prices[ticker] = parseFloat(d.price);
+            }
+          } catch {}
+        }
+        return prices;
+      }),
   }),
   // ─── ValueScan 信号历史胜率统计 ────────────────────────────────────────────────────────────────────────────────────
   // ─── 模拟交易 ────────────────────────────────────────────────────────────────

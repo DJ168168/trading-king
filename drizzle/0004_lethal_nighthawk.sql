@@ -1,0 +1,1 @@
+ALTER TABLE `strategy_config` ADD `autoTradingPositionPercent` float DEFAULT 1;

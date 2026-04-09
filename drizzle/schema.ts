@@ -159,6 +159,7 @@ export const strategyConfig = mysqlTable("strategy_config", {
   minScoreThreshold: float("minScoreThreshold").default(60),
   // 交易开关
   autoTradingEnabled: boolean("autoTradingEnabled").default(false),
+  autoTradingPositionPercent: float("autoTradingPositionPercent").default(1), // 每笔自动交易仓位比例(%)
   useTestnet: boolean("useTestnet").default(true),
   // 紧急停止
   emergencyStop: boolean("emergencyStop").default(false),

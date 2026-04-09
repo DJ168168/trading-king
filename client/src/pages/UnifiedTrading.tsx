@@ -55,6 +55,16 @@ export default function UnifiedTrading() {
     enabled: mode === "live",
     refetchInterval: 15000,
   });
+  // 实盘持仓的币种列表（用于获取当前价格）
+  const liveSymbols = useMemo(() => {
+    if (!allPositions || allPositions.length === 0) return [];
+    const seen = new Set<string>();
+    return allPositions.map(p => p.symbol.replace(/USDT$/, '')).filter(s => { if (seen.has(s)) return false; seen.add(s); return true; });
+  }, [allPositions]);
+  const { data: tickerPrices } = trpc.exchange.getTickerPrices.useQuery(
+    { symbols: liveSymbols },
+    { enabled: mode === "live" && liveSymbols.length > 0, refetchInterval: 10000 }
+  );
 
   // 模拟交易操作
   const paperUpdateConfig = trpc.paperTrading.updateConfig.useMutation({
@@ -518,9 +528,31 @@ export default function UnifiedTrading() {
                       </td>
                       <td className="p-3 text-right">{parseFloat(pos.size).toFixed(4)}</td>
                       <td className="p-3 text-right">${parseFloat(pos.entryPrice).toFixed(2)}</td>
-                      <td className="p-3 text-right">-</td>
+                      <td className="p-3 text-right">
+                        {(() => {
+                          const sym = pos.symbol.replace(/USDT$/, '');
+                          const price = tickerPrices?.[sym] ?? tickerPrices?.[pos.symbol];
+                          return price ? <span className="text-[var(--color-text)]">${price.toFixed(2)}</span> : <span className="text-[var(--color-muted)]">-</span>;
+                        })()}
+                      </td>
                       <td className={cn("p-3 text-right font-medium", parseFloat(pos.unrealizedPnl) >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]")}>
-                        {parseFloat(pos.unrealizedPnl) >= 0 ? "+" : ""}{parseFloat(pos.unrealizedPnl).toFixed(2)}
+                        {(() => {
+                          const sym = pos.symbol.replace(/USDT$/, '');
+                          const price = tickerPrices?.[sym] ?? tickerPrices?.[pos.symbol];
+                          const entry = parseFloat(pos.entryPrice);
+                          if (price && isFinite(price) && entry > 0 && isFinite(entry)) {
+                            const pct = ((price - entry) / entry * 100) * (pos.side === 'long' || pos.side === 'buy' ? 1 : -1);
+                            if (isFinite(pct)) {
+                              return <span className={cn("text-xs ml-1", pct >= 0 ? "text-[var(--color-profit)]" : "text-[var(--color-loss)]")}>{pct >= 0 ? '+' : ''}{pct.toFixed(2)}%</span>;
+                            }
+                          }
+                          return null;
+                        })()}
+                        {(() => {
+                          const pnl = parseFloat(pos.unrealizedPnl);
+                          if (!isFinite(pnl)) return <span className="text-[var(--color-muted)]">-</span>;
+                          return <>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}</>;
+                        })()}
                       </td>
                       <td className="p-3 text-right">{pos.leverage}x</td>
                       <td className="p-3 text-right">
