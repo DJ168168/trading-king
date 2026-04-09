@@ -2,7 +2,7 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   getRecentSignals, getRecentConfluenceSignals,
   getTrades, getOpenTrades, getTodayStats, insertTrade, closeTrade,
@@ -295,7 +295,7 @@ export const appRouter = router({
     todayStats: publicProcedure.query(async () => getTodayStats()),
 
     // 手动开仓（演示/测试用）
-    openManual: protectedProcedure
+    openManual: publicProcedure
       .input(z.object({
         symbol: z.string(),
         quantity: z.number().positive(),
@@ -353,7 +353,7 @@ export const appRouter = router({
       }),
 
     // 手动平仓
-    closeManual: protectedProcedure
+    closeManual: publicProcedure
       .input(z.object({
         tradeId: z.number(),
         exitPrice: z.number().positive(),
@@ -375,7 +375,7 @@ export const appRouter = router({
   positions: router({
     list: publicProcedure.query(async () => getAllPositions()),
 
-    updatePrice: protectedProcedure
+    updatePrice: publicProcedure
       .input(z.object({ symbol: z.string(), currentPrice: z.number().positive() }))
       .mutation(async ({ input }) => {
         const positions = await getAllPositions();
@@ -410,7 +410,7 @@ export const appRouter = router({
 
     list: publicProcedure.query(async () => getAllConfigs()),
 
-    save: protectedProcedure
+    save: publicProcedure
       .input(z.object({
         name: z.string().default("默认策略"),
         signalTimeWindow: z.number().min(60).max(3600).default(300),
@@ -440,14 +440,14 @@ export const appRouter = router({
         return { success: true, config };
       }),
 
-    toggleEmergencyStop: protectedProcedure
+    toggleEmergencyStop: publicProcedure
       .input(z.object({ id: z.number(), enabled: z.boolean() }))
       .mutation(async ({ input }) => {
         await updateStrategyConfig(input.id, { emergencyStop: input.enabled });
         return { success: true };
       }),
 
-    toggleAutoTrading: protectedProcedure
+    toggleAutoTrading: publicProcedure
       .input(z.object({ id: z.number(), enabled: z.boolean() }))
       .mutation(async ({ input }) => {
         await updateStrategyConfig(input.id, { autoTradingEnabled: input.enabled });
@@ -463,7 +463,7 @@ export const appRouter = router({
       .input(z.object({ hours: z.number().default(24) }).optional())
       .query(async ({ input }) => getSnapshotHistory(input?.hours ?? 24)),
 
-    updateSnapshot: protectedProcedure
+    updateSnapshot: publicProcedure
       .input(z.object({
         totalBalance: z.number(),
         availableBalance: z.number(),
@@ -492,7 +492,7 @@ export const appRouter = router({
   backtest: router({
     list: publicProcedure.query(async () => getBacktestResults()),
 
-    run: protectedProcedure
+    run: publicProcedure
       .input(z.object({
         name: z.string(),
         startDate: z.string(),
@@ -539,7 +539,7 @@ export const appRouter = router({
       return config;
     }),
 
-    save: protectedProcedure
+    save: publicProcedure
       .input(z.object({
         botToken: z.string().optional(),
         chatId: z.string().optional(),
@@ -553,7 +553,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    test: protectedProcedure
+    test: publicProcedure
       .input(z.object({ message: z.string().default("测试消息 - 交易之王系统运行正常 ✅") }))
       .mutation(async ({ input }) => {
         const config = await getTelegramConfig();
@@ -654,14 +654,14 @@ export const appRouter = router({
     }),
 
     // 设置 VS Token（登录用户均可配置，用于 warnMessage 接口）
-    setToken: protectedProcedure
+    setToken: publicProcedure
       .input(z.object({ token: z.string().min(10) }))
       .mutation(async ({ input }) => {
         await setVSToken(input.token);
         return { success: true, message: "Token 已配置并持久化到数据库，服务重启后自动恢复" };
       }),
     // VS 自动登录（通过账号密码登录获取 Token）
-    autoLogin: protectedProcedure
+    autoLogin: publicProcedure
       .input(z.object({
         email: z.string().email(),
         password: z.string().min(6),
@@ -694,7 +694,7 @@ export const appRouter = router({
       };
     }),
     // 停止自动刷新
-    stopAutoRefresh: protectedProcedure.mutation(async () => {
+    stopAutoRefresh: publicProcedure.mutation(async () => {
       stopAutoRefreshTimer();
       const creds = await loadVSLoginCredentials();
       if (creds) {
@@ -952,7 +952,7 @@ export const appRouter = router({
   // ─── 实盘交易所 API ────────────────────────────────────────────
   exchange: router({
     // 获取币安账户信息
-    binanceAccount: protectedProcedure.query(async ({ ctx }) => {
+    binanceAccount: publicProcedure.query(async ({ ctx }) => {
       const cfg = await getActiveConfig();
       if (!cfg?.binanceApiKey) throw new Error("请先在设置中配置币安 API Key");
       const svc = createBinanceService(cfg.binanceApiKey, cfg.binanceSecretKey ?? "", cfg.binanceUseTestnet ?? true);
@@ -965,14 +965,14 @@ export const appRouter = router({
       }
     }),
     // 获取币安持仓
-    binancePositions: protectedProcedure.query(async ({ ctx }) => {
+    binancePositions: publicProcedure.query(async ({ ctx }) => {
       const cfg = await getActiveConfig();
       if (!cfg?.binanceApiKey) throw new Error("请先在设置中配置币安 API Key");
       const svc = createBinanceService(cfg.binanceApiKey, cfg.binanceSecretKey ?? "", cfg.binanceUseTestnet ?? true);
       return svc.getPositions();
     }),
     // 币安下单
-    binancePlaceOrder: protectedProcedure
+    binancePlaceOrder: publicProcedure
       .input(z.object({
         symbol: z.string(),
         side: z.enum(["BUY", "SELL"]),
@@ -990,7 +990,7 @@ export const appRouter = router({
         return svc.openShort(input.symbol, input.quantity, input.leverage);
       }),
     // 币安平仓
-    binanceClosePosition: protectedProcedure
+    binanceClosePosition: publicProcedure
       .input(z.object({ symbol: z.string() }))
       .mutation(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -999,7 +999,7 @@ export const appRouter = router({
         return svc.closeAllPositions(input.symbol);
       }),
     // 币安当前挂单
-    binanceOpenOrders: protectedProcedure
+    binanceOpenOrders: publicProcedure
       .input(z.object({ symbol: z.string().optional() }))
       .query(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -1008,7 +1008,7 @@ export const appRouter = router({
         return svc.getOpenOrders(input?.symbol);
       }),
     // 币安撤单
-    binanceCancelOrder: protectedProcedure
+    binanceCancelOrder: publicProcedure
       .input(z.object({ symbol: z.string(), orderId: z.number() }))
       .mutation(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -1018,21 +1018,21 @@ export const appRouter = router({
       }),
 
     // 获取欧易账户信息
-    okxAccount: protectedProcedure.query(async ({ ctx }) => {
+    okxAccount: publicProcedure.query(async ({ ctx }) => {
       const cfg = await getActiveConfig();
       if (!cfg?.okxApiKey) throw new Error("请先在设置中配置欧易 API Key");
       const svc = createOKXService(cfg.okxApiKey, cfg.okxSecretKey ?? "", cfg.okxPassphrase ?? "", cfg.okxUseDemo ?? true);
       return svc.getBalance();
     }),
     // 获取欧易持仓
-    okxPositions: protectedProcedure.query(async ({ ctx }) => {
+    okxPositions: publicProcedure.query(async ({ ctx }) => {
       const cfg = await getActiveConfig();
       if (!cfg?.okxApiKey) throw new Error("请先在设置中配置欧易 API Key");
       const svc = createOKXService(cfg.okxApiKey, cfg.okxSecretKey ?? "", cfg.okxPassphrase ?? "", cfg.okxUseDemo ?? true);
       return svc.getPositions();
     }),
     // 欧易下单
-    okxPlaceOrder: protectedProcedure
+    okxPlaceOrder: publicProcedure
       .input(z.object({
         symbol: z.string(),
         side: z.enum(["buy", "sell"]),
@@ -1050,7 +1050,7 @@ export const appRouter = router({
         return svc.openShort(input.symbol, String(input.quantity), input.leverage);
       }),
     // 欧易平仓
-    okxClosePosition: protectedProcedure
+    okxClosePosition: publicProcedure
       .input(z.object({ symbol: z.string() }))
       .mutation(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -1059,14 +1059,14 @@ export const appRouter = router({
         return svc.closeAllPositions(input.symbol);
       }),
     // 欧易当前挂单
-    okxOpenOrders: protectedProcedure.query(async ({ ctx }) => {
+    okxOpenOrders: publicProcedure.query(async ({ ctx }) => {
       const cfg = await getActiveConfig();
       if (!cfg?.okxApiKey) throw new Error("请先在设置中配置欧易 API Key");
       const svc = createOKXService(cfg.okxApiKey, cfg.okxSecretKey ?? "", cfg.okxPassphrase ?? "", cfg.okxUseDemo ?? true);
       return svc.getOpenOrders();
     }),
     // 欧易撤单
-    okxCancelOrder: protectedProcedure
+    okxCancelOrder: publicProcedure
       .input(z.object({ symbol: z.string(), orderId: z.string() }))
       .mutation(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -1076,7 +1076,7 @@ export const appRouter = router({
       }),
 
     // 测试 Binance 连接
-    binanceTest: protectedProcedure.query(async () => {
+    binanceTest: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.binanceApiKey) return { success: false, message: "请先配置 Binance API Key" };
       try {
@@ -1090,7 +1090,7 @@ export const appRouter = router({
       }
     }),
     // 测试 OKX 连接
-    okxTest: protectedProcedure.query(async () => {
+    okxTest: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.okxApiKey) return { success: false, message: "请先配置 OKX API Key" };
       try {
@@ -1102,7 +1102,7 @@ export const appRouter = router({
       }
     }),
     // 更新交易所配置（API Key + 交易所选择）
-    saveExchangeConfig: protectedProcedure
+    saveExchangeConfig: publicProcedure
       .input(z.object({
         selectedExchange: z.enum(["binance", "okx", "both"]).default("binance"),
         binanceApiKey: z.string().default(""),
@@ -1146,7 +1146,7 @@ export const appRouter = router({
       }),
 
     // 获取当前交易所配置
-    getExchangeConfig: protectedProcedure.query(async () => {
+    getExchangeConfig: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       return {
         selectedExchange: cfg?.selectedExchange ?? "binance",
@@ -1171,7 +1171,7 @@ export const appRouter = router({
     }),
 
     // 保存完整交易所配置（含 Bybit/Gate/Bitget）
-    saveFullExchangeConfig: protectedProcedure
+    saveFullExchangeConfig: publicProcedure
       .input(z.object({
         selectedExchange: z.enum(["binance", "okx", "bybit", "gate", "bitget", "both", "all"]).default("binance"),
         binanceApiKey: z.string().default(""),
@@ -1225,7 +1225,7 @@ export const appRouter = router({
       }),
 
     // 测试 Bybit 连接
-    bybitTest: protectedProcedure.query(async () => {
+    bybitTest: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.bybitApiKey) return { success: false, message: "请先配置 Bybit API Key" };
       const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
@@ -1233,7 +1233,7 @@ export const appRouter = router({
     }),
 
     // 获取 Bybit 账户余额
-    bybitAccount: protectedProcedure.query(async () => {
+    bybitAccount: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.bybitApiKey) throw new Error("请先配置 Bybit API Key");
       const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
@@ -1241,7 +1241,7 @@ export const appRouter = router({
     }),
 
     // 获取 Bybit 持仓
-    bybitPositions: protectedProcedure.query(async () => {
+    bybitPositions: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.bybitApiKey) throw new Error("请先配置 Bybit API Key");
       const svc = createBybitService({ apiKey: cfg.bybitApiKey, secretKey: cfg.bybitSecretKey ?? "", useTestnet: cfg.bybitUseTestnet ?? false });
@@ -1249,7 +1249,7 @@ export const appRouter = router({
     }),
 
     // Bybit 下单
-    bybitPlaceOrder: protectedProcedure
+    bybitPlaceOrder: publicProcedure
       .input(z.object({
         symbol: z.string(),
         side: z.enum(["Buy", "Sell"]),
@@ -1274,7 +1274,7 @@ export const appRouter = router({
       }),
 
     // Bybit 平仓
-    bybitClosePosition: protectedProcedure
+    bybitClosePosition: publicProcedure
       .input(z.object({ symbol: z.string(), side: z.enum(["Buy", "Sell"]), qty: z.string() }))
       .mutation(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -1284,7 +1284,7 @@ export const appRouter = router({
       }),
 
     // Gate.io 平仓
-    gateClosePosition: protectedProcedure
+    gateClosePosition: publicProcedure
       .input(z.object({ contract: z.string(), size: z.number() }))
       .mutation(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -1293,7 +1293,7 @@ export const appRouter = router({
         return svc.closePosition('usdt', input.contract, input.size);
       }),
     // 测试 Gate.io 连接
-    gateTest: protectedProcedure.query(async () => {
+    gateTest: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.gateApiKey) return { success: false, message: "请先配置 Gate.io API Key" };
       const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
@@ -1301,7 +1301,7 @@ export const appRouter = router({
     }),
 
     // 获取 Gate.io 账户余额
-    gateAccount: protectedProcedure.query(async () => {
+    gateAccount: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.gateApiKey) throw new Error("请先配置 Gate.io API Key");
       const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
@@ -1309,7 +1309,7 @@ export const appRouter = router({
     }),
 
     // 获取 Gate.io 持仓
-    gatePositions: protectedProcedure.query(async () => {
+    gatePositions: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.gateApiKey) throw new Error("请先配置 Gate.io API Key");
       const svc = createGateService({ apiKey: cfg.gateApiKey, secretKey: cfg.gateSecretKey ?? "" });
@@ -1317,7 +1317,7 @@ export const appRouter = router({
     }),
 
     // Gate.io 下单
-    gatePlaceOrder: protectedProcedure
+    gatePlaceOrder: publicProcedure
       .input(z.object({
         contract: z.string(),
         size: z.number(),
@@ -1338,7 +1338,7 @@ export const appRouter = router({
       }),
 
     // Bitget 平仓
-    bitgetClosePosition: protectedProcedure
+    bitgetClosePosition: publicProcedure
       .input(z.object({ symbol: z.string(), side: z.enum(['buy', 'sell']), size: z.string() }))
       .mutation(async ({ input }) => {
         const cfg = await getActiveConfig();
@@ -1347,7 +1347,7 @@ export const appRouter = router({
         return svc.placeOrder({ symbol: input.symbol, productType: 'USDT-FUTURES', marginMode: 'crossed', marginCoin: 'USDT', size: input.size, side: input.side, tradeSide: 'close', orderType: 'market' });
       }),
     // 测试 Bitget 连接
-    bitgetTest: protectedProcedure.query(async () => {
+    bitgetTest: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.bitgetApiKey) return { success: false, message: "请先配置 Bitget API Key" };
       const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
@@ -1355,7 +1355,7 @@ export const appRouter = router({
     }),
 
     // 获取 Bitget 账户余额
-    bitgetAccount: protectedProcedure.query(async () => {
+    bitgetAccount: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.bitgetApiKey) throw new Error("请先配置 Bitget API Key");
       const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
@@ -1363,7 +1363,7 @@ export const appRouter = router({
     }),
 
     // 获取 Bitget 持仓
-    bitgetPositions: protectedProcedure.query(async () => {
+    bitgetPositions: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
       if (!cfg?.bitgetApiKey) throw new Error("请先配置 Bitget API Key");
       const svc = createBitgetService({ apiKey: cfg.bitgetApiKey, secretKey: cfg.bitgetSecretKey ?? "", passphrase: cfg.bitgetPassphrase ?? "" });
@@ -1371,7 +1371,7 @@ export const appRouter = router({
     }),
 
     // Bitget 下单
-    bitgetPlaceOrder: protectedProcedure
+    bitgetPlaceOrder: publicProcedure
       .input(z.object({
         symbol: z.string(),
         side: z.enum(["buy", "sell"]),
@@ -1971,7 +1971,7 @@ export const appRouter = router({
     list: publicProcedure
       .input(z.object({ limit: z.number().default(100), signalType: z.string().optional(), direction: z.string().optional() }).optional())
       .query(async ({ input }) => getVsSignalStats({ limit: input?.limit ?? 100, signalType: input?.signalType, direction: input?.direction })),
-    add: protectedProcedure
+    add: publicProcedure
       .input(z.object({
         symbol: z.string(),
         signalType: z.string(),
@@ -1984,7 +1984,7 @@ export const appRouter = router({
         const id = await addVsSignalStat(input);
         return { success: !!id, id };
       }),
-    update: protectedProcedure
+    update: publicProcedure
       .input(z.object({
         id: z.number(),
         exitPrice24h: z.number().optional(),
