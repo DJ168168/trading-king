@@ -161,8 +161,8 @@ export default function TradingLayout({ children }: { children: React.ReactNode 
               <span className="text-xs text-muted-foreground">实时信号</span>
             </div>
             <div className="space-y-1">
-              {liveSignals.length > 0 ? liveSignals.map((s) => (
-                <div key={s.signalId ?? s.id ?? `${s.symbol}-${String(s.createdAt)}`} className="flex items-center justify-between text-xs">
+              {liveSignals.length > 0 ? liveSignals.map((s, idx) => (
+                <div key={s.id ?? s.signalId ?? idx} className="flex items-center justify-between text-xs">
                   <span className="font-mono font-medium text-foreground">{s.symbol}</span>
                   <span className={cn("font-mono", signalTypeColors[s.messageType] ?? "text-muted-foreground")}>
                     {s.signalType}

@@ -15,14 +15,14 @@ export default function Positions() {
   const [openForm, setOpenForm] = useState({ symbol: "BTC", quantity: "0.01", entryPrice: "", leverage: "5" });
 
   // 实盘持仓
-  const { data: positions, refetch } = trpc.positions.list.useQuery(undefined, { refetchInterval: 10000 });
-  const { data: openTrades } = trpc.trades.open.useQuery(undefined, { refetchInterval: 10000 });
+  const { data: positions, refetch } = trpc.positions.list.useQuery(undefined, { refetchInterval: 15000 });
+  const { data: openTrades } = trpc.trades.open.useQuery(undefined, { refetchInterval: 15000 });
   const { data: snapshot } = trpc.account.snapshot.useQuery();
 
   // 模拟盘持仓
-  const { data: paperPositions = [], refetch: refetchPaper } = trpc.paperTrading.getPositions.useQuery(undefined, { refetchInterval: 5000 });
-  const { data: paperAccount } = trpc.paperTrading.getAccount.useQuery(undefined, { refetchInterval: 5000 });
-  const { data: engineStatus } = trpc.paperTrading.engineStatus.useQuery(undefined, { refetchInterval: 5000 });
+  const { data: paperPositions = [], refetch: refetchPaper } = trpc.paperTrading.getPositions.useQuery(undefined, { refetchInterval: 15000 });
+  const { data: paperAccount } = trpc.paperTrading.getAccount.useQuery(undefined, { refetchInterval: 15000 });
+  const { data: engineStatus } = trpc.paperTrading.engineStatus.useQuery(undefined, { refetchInterval: 15000 });
 
   const closeMutation = trpc.trades.closeManual.useMutation({
     onSuccess: (data) => {
@@ -172,12 +172,11 @@ export default function Positions() {
                             <span className="px-2 py-0.5 bg-fomo-subtle text-fomo text-xs rounded-md font-mono">{pos.leverage}x</span>
                           </td>
                           <td className="px-4 py-3">
-                            {trade && (
-                              <Button variant="outline" size="sm" className="text-xs text-loss border-loss/30 hover:bg-loss-subtle"
-                                onClick={() => { setCloseDialog({ open: true, tradeId: trade.id, symbol: pos.symbol }); setExitPrice(pos.currentPrice.toString()); }}>
-                                <X className="w-3 h-3 mr-1" />平仓
-                              </Button>
-                            )}
+                            <Button variant="outline" size="sm" className="text-xs text-loss border-loss/30 hover:bg-loss-subtle"
+                              disabled={!trade}
+                              onClick={() => { if (trade) { setCloseDialog({ open: true, tradeId: trade.id, symbol: pos.symbol }); setExitPrice(pos.currentPrice.toString()); } }}>
+                              <X className="w-3 h-3 mr-1" />平仓
+                            </Button>
                           </td>
                         </tr>
                       );

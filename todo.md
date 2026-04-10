@@ -171,3 +171,14 @@
 - [x] Telegram 消息增强：开仓/平仓消息加入交易所名称和当前账户余额
 - [x] 实盘每日报告：UTC+8 20:00 定时推送当日盈亏汇总（总盈亏、胜率、最大回撤）到 Telegram
 - [x] 模拟盘持仓上限可调整：前端「量化模拟交易 → 策略配置」支持修改 maxPositions（默认改为 3）
+
+## ValueScan 新功能接入（2026-04-10 第十批）
+- [x] AI 大盘解析 SSE 订阅：服务器启动后自动连接，存库+推 Telegram
+- [x] 代币信号 SSE 订阅：全部代币实时信号存库+推 Telegram
+- [x] 新页面「AI 大盘解析」：历史记录+代币信号+手动推送 TG 按钮
+- [x] 仪表盘 ValueScan SSE 连接状态展示
+
+## Bug 修复：React DOM insertBefore NotFoundError（2026-04-11）
+- [x] 修复 Positions.tsx live 表格条件渲染导致 td 数量不一致
+- [x] 修复 TradingLayout.tsx 侧边栏信号 key 不稳定
+- [x] 降低 Positions.tsx refetchInterval 避免并发冲突
