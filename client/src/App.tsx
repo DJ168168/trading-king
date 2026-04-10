@@ -29,6 +29,7 @@ import BullBearPanel from "./pages/BullBearPanel";
 import NewsPanel from "./pages/NewsPanel";
 import UnifiedTrading from "./pages/UnifiedTrading";
 import SignalQualityDashboard from "./pages/SignalQualityDashboard";
+import AIMarketAnalysis from "./pages/AIMarketAnalysis";
 
 function Router() {
   return (
@@ -58,6 +59,7 @@ function Router() {
         <Route path="/news" component={NewsPanel} />
         <Route path="/unified-trading" component={UnifiedTrading} />
         <Route path="/signal-quality" component={SignalQualityDashboard} />
+        <Route path="/ai-market" component={AIMarketAnalysis} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

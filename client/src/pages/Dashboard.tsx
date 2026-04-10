@@ -63,6 +63,7 @@ export default function Dashboard() {
   const { data: fearGreed } = trpc.valueScan.fearGreed.useQuery(undefined, { refetchInterval: 60000 });
   const { data: vsWarn } = trpc.valueScan.warnMessages.useQuery({ pageNum: 1, pageSize: 6 }, { refetchInterval: 30000 });
   const { data: engineStatus } = trpc.paperTrading.engineStatus.useQuery(undefined, { refetchInterval: 5000 });
+  const { data: sseStatus } = trpc.valueScanAI.sseStatus.useQuery(undefined, { refetchInterval: 10000 });
   const toggleLiveEngine = trpc.paperTrading.toggleLiveEngine.useMutation({
     onSuccess: (data) => {
       utils.paperTrading.engineStatus.invalidate();
@@ -265,6 +266,28 @@ export default function Dashboard() {
                   实盘最近下单: {new Date(engineStatus.live.lastOrderTime).toLocaleTimeString("zh-CN")}
                 </div>
               )}
+              {/* ValueScan SSE 订阅状态 */}
+              <div className="border-t border-border mt-3 pt-3">
+                <div className="text-xs text-muted-foreground mb-2 font-medium">ValueScan SSE</div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className={cn("w-1.5 h-1.5 rounded-full", sseStatus?.market ? "bg-blue-400 animate-pulse" : "bg-muted-foreground")} />
+                    AI 大盘
+                  </span>
+                  <span className={cn("text-xs font-medium", sseStatus?.market ? "text-blue-400" : "text-muted-foreground")}>
+                    {sseStatus?.market ? "已连接" : "断开"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className={cn("w-1.5 h-1.5 rounded-full", sseStatus?.token ? "bg-green-400 animate-pulse" : "bg-muted-foreground")} />
+                    代币信号
+                  </span>
+                  <span className={cn("text-xs font-medium", sseStatus?.token ? "text-green-400" : "text-muted-foreground")}>
+                    {sseStatus?.token ? "已连接" : "断开"}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

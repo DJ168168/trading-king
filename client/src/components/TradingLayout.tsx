@@ -22,6 +22,7 @@ const navItems = [
   { path: "/backtest", icon: FlaskConical, label: "回测模拟", desc: "策略验证" },
   { path: "/settings", icon: Settings, label: "系统设置", desc: "Telegram等" },
   { path: "/vs-signals", icon: Satellite, label: "VS 实时信号", desc: "ValueScan API" },
+  { path: "/ai-market", icon: BrainCircuit, label: "AI 大盘解析", desc: "ValueScan AI分析·代币信号" },
   { path: "/strategy-center", icon: Target, label: "高胜率策略", desc: "共振检测·视频策略" },
   { path: "/knowledge", icon: BookOpen, label: "知识库", desc: "策略教程" },
   { path: "/market-overview", icon: Globe, label: "市场全景", desc: "资金费率·持仓量" },

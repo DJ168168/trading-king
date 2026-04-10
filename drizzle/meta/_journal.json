@@ -36,6 +36,13 @@
       "when": 1775735644493,
       "tag": "0004_lethal_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1775840850753,
+      "tag": "0005_last_sprite",
+      "breakpoints": true
     }
   ]
 }
