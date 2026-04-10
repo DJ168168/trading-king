@@ -83,3 +83,13 @@ setTimeout(async () => {
     console.error('[AutoStart] 模拟引擎自动启动失败:', e);
   }
 }, 3000);
+
+// 启动每日报告定时任务（UTC+8 20:00 推送）
+setTimeout(async () => {
+  try {
+    const { startDailyReportScheduler } = await import('../dailyReportService');
+    startDailyReportScheduler();
+  } catch (e) {
+    console.error('[AutoStart] 每日报告定时任务启动失败:', e);
+  }
+}, 5000);

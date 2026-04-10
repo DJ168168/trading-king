@@ -87,7 +87,7 @@ async function placeRealOrder(
   direction: "long" | "short",
   price: number,
   config: any
-): Promise<{ orderId: string; exchange: string } | null> {
+): Promise<{ orderId: string; exchange: string; balance: number } | null> {
   const exchange = config.selectedExchange ?? "binance";
   const leverage = config.leverage ?? 5;
   const positionPercent = config.autoTradingPositionPercent ?? 1;
@@ -118,7 +118,7 @@ async function placeRealOrder(
       } else {
         order = await svc.openShort(sym, parseFloat(quantity.toFixed(3)), leverage);
       }
-      return { orderId: order.orderId?.toString() ?? "unknown", exchange: "binance" };
+      return { orderId: order.orderId?.toString() ?? "unknown", exchange: "binance", balance };
     } else if (exchange === "okx") {
       const svc = createOKXService(config.okxApiKey || process.env.OKX_API_KEY || "", config.okxSecretKey || process.env.OKX_SECRET_KEY || "", config.okxPassphrase || process.env.OKX_PASSPHRASE || "");
       const instId = symbol.replace("USDT", "") + "-USDT-SWAP";
@@ -129,14 +129,14 @@ async function placeRealOrder(
       } else {
         order = await svc.openShort(instId, sz.toString());
       }
-      return { orderId: order.ordId ?? "unknown", exchange: "okx" };
+      return { orderId: order.ordId ?? "unknown", exchange: "okx", balance };
     } else if (exchange === "bybit") {
       const svc = createBybitService({ apiKey: config.bybitApiKey || "", secretKey: config.bybitSecretKey || "" });
       const sym = symbol.endsWith("USDT") ? symbol : symbol + "USDT";
       const qty = parseFloat(quantity.toFixed(3)).toString();
       const side = direction === "long" ? "Buy" : "Sell";
       const order = await svc.placeOrder({ category: "linear", symbol: sym, side, orderType: "Market", qty });
-      return { orderId: order?.orderId ?? "unknown", exchange: "bybit" };
+      return { orderId: order?.orderId ?? "unknown", exchange: "bybit", balance };
     }
   } catch (e: any) {
     console.error(`[LiveTrading] 下单失败 (${exchange}):`, e.message);
@@ -250,7 +250,8 @@ export async function runLiveTradingCycle() {
             `💎 <b>${sym}/USDT</b>\n` +
             `💰 入场价: <b>$${price.toFixed(4)}</b>\n` +
             `📊 评分: <b>${eval_.score.toFixed(0)}/100</b>\n` +
-            `🏦 交易所: ${order.exchange.toUpperCase()}\n` +
+            `🏦 交易所: <b>${order.exchange.toUpperCase()}</b>\n` +
+            `💵 账户余额: <b>$${order.balance.toFixed(2)} USDT</b>\n` +
             `🔑 订单ID: ${order.orderId}\n` +
             `📝 ${eval_.reason.substring(0, 80)}\n` +
             `⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`;
@@ -292,7 +293,8 @@ export async function runLiveTradingCycle() {
             `💎 <b>${sym}/USDT</b>\n` +
             `💰 入场价: <b>$${price.toFixed(4)}</b>\n` +
             `📊 机会代币评分: <b>${vsScore}/100</b>\n` +
-            `🏦 交易所: ${order.exchange.toUpperCase()}\n` +
+            `🏦 交易所: <b>${order.exchange.toUpperCase()}</b>\n` +
+            `💵 账户余额: <b>$${order.balance.toFixed(2)} USDT</b>\n` +
             `⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`;
           await sendTg(msg);
         }

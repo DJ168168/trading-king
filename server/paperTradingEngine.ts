@@ -109,6 +109,8 @@ async function openPosition(
     `💎 <b>${symbol}/USDT</b>\n` +
     `💰 入场价: <b>$${entryPrice.toFixed(4)}</b>\n` +
     `📊 评分: <b>${signalScore.toFixed(0)}/100</b>\n` +
+    `🏦 交易所: <b>模拟盘</b>\n` +
+    `💵 模拟余额: <b>$${newBalance.toFixed(2)} USDT</b>\n` +
     `🛡 止损: $${stopLoss.toFixed(4)} (-${slPct}%)\n` +
     `🎯 止盈: $${takeProfit.toFixed(4)} (+${tpPct}%)\n` +
     `📝 ${triggerSignal.substring(0, 80)}\n` +
@@ -173,6 +175,8 @@ async function closePosition(
     `💎 <b>${symbol}/USDT</b>\n` +
     `💰 平仓价: <b>$${exitPrice.toFixed(4)}</b>\n` +
     `📈 盈亏: <b>${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)} (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%)</b>\n` +
+    `🏦 交易所: <b>模拟盘</b>\n` +
+    `💵 模拟余额: <b>$${newBalance.toFixed(2)} USDT</b>\n` +
     `⏱ 持仓: ${holdingMinutes} 分钟\n` +
     `⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`;
   await sendTg(msg);
