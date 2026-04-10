@@ -30,7 +30,12 @@ import NewsPanel from "./pages/NewsPanel";
 import UnifiedTrading from "./pages/UnifiedTrading";
 import SignalQualityDashboard from "./pages/SignalQualityDashboard";
 import AIMarketAnalysis from "./pages/AIMarketAnalysis";
-
+import ResonanceEngine from "./pages/ResonanceEngine";
+import LiveConsole from "./pages/LiveConsole";
+import NewsSentiment from "./pages/NewsSentiment";
+import SignalQuality from "./pages/SignalQuality";
+import LongShortPanel from "./pages/LongShortPanel";
+import QuantSim from "./pages/QuantSim";
 function Router() {
   return (
     <TradingLayout>
@@ -60,6 +65,12 @@ function Router() {
         <Route path="/unified-trading" component={UnifiedTrading} />
         <Route path="/signal-quality" component={SignalQualityDashboard} />
         <Route path="/ai-market" component={AIMarketAnalysis} />
+        <Route path="/resonance-engine" component={ResonanceEngine} />
+        <Route path="/live-console" component={LiveConsole} />
+        <Route path="/news-sentiment" component={NewsSentiment} />
+        <Route path="/signal-quality-basic" component={SignalQuality} />
+        <Route path="/long-short" component={LongShortPanel} />
+        <Route path="/quant-sim" component={QuantSim} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
