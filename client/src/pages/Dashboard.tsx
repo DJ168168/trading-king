@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { TrendingUp, TrendingDown, Zap, Activity, Target, Shield, RefreshCw, BarChart2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Zap, Activity, Target, Shield, RefreshCw, BarChart2, Power } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
@@ -74,6 +75,14 @@ export default function Dashboard() {
 
   const mockSnapshotMutation = trpc.account.mockSnapshot.useMutation({
     onSuccess: () => { refetchSnapshot(); toast.success("账户数据已更新"); }
+  });
+  const utils = trpc.useUtils();
+  const toggleAutoMutation = trpc.config.toggleAutoTrading.useMutation({
+    onSuccess: (_, vars) => {
+      utils.config.active.invalidate();
+      toast.success(vars.enabled ? "🚀 自动交易已开启！等待 ValueScan 信号触发" : "⏸ 自动交易已暂停");
+    },
+    onError: () => toast.error("切换失败，请重试")
   });
 
   const totalBalance = snapshot?.totalBalance ?? 0;
@@ -194,10 +203,26 @@ export default function Dashboard() {
                 <span className="text-xs font-mono text-foreground">{((config?.minSignalScore ?? 0.6) * 100).toFixed(0)}%</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-xs text-muted-foreground">自动交易</span>
-                <span className={cn("text-xs font-medium", config?.autoTradingEnabled ? "text-profit" : "text-muted-foreground")}>
-                  {config?.autoTradingEnabled ? "启用" : "禁用"}
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Power className="w-3 h-3" />自动交易
                 </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("text-xs font-medium", config?.autoTradingEnabled ? "text-profit" : "text-muted-foreground")}>
+                    {config?.autoTradingEnabled ? "运行中" : "已停止"}
+                  </span>
+                  <Switch
+                    checked={!!config?.autoTradingEnabled}
+                    onCheckedChange={(checked) => {
+                      if (config?.id) {
+                        toggleAutoMutation.mutate({ id: config.id, enabled: checked });
+                      } else {
+                        toast.error("配置未加载，请刷新页面");
+                      }
+                    }}
+                    disabled={toggleAutoMutation.isPending}
+                    className="scale-75 origin-right"
+                  />
+                </div>
               </div>
             </div>
           </div>

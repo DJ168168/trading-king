@@ -2220,6 +2220,93 @@ export const appRouter = router({
       }
     }),
   }),
+  // ─── 量化模拟交易（QuantSim 页面使用）─────────────────────────────────────────
+  sim: router({
+    positions: publicProcedure.query(async () => {
+      const d = await getDb();
+      if (!d) return [];
+      const rows = await d.select().from(paperPositions);
+      return Promise.all(rows.map(async (pos) => {
+        const ticker = pos.symbol.endsWith("USDT") ? pos.symbol : pos.symbol + "USDT";
+        let currentPrice = pos.currentPrice ?? pos.entryPrice;
+        try {
+          const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=" + ticker);
+          if (res.ok) { const data = await res.json() as { price: string }; currentPrice = parseFloat(data.price); }
+        } catch {}
+        const lev = pos.leverage || 1;
+        const notional = pos.notionalValue ?? 500;
+        const pnl = pos.direction === "long"
+          ? ((currentPrice - pos.entryPrice) / pos.entryPrice) * lev * notional
+          : ((pos.entryPrice - currentPrice) / pos.entryPrice) * lev * notional;
+        return { id: pos.id, exchange: "paper", symbol: pos.symbol, side: pos.direction, size: pos.quantity, entryPrice: pos.entryPrice, currentPrice, pnl, leverage: lev, openedAt: pos.openedAt };
+      }));
+    }),
+    trades: publicProcedure
+      .input(z.object({ limit: z.number().default(20) }).optional())
+      .query(async ({ input }) => {
+        const d = await getDb();
+        if (!d) return [];
+        const rows = await d.select().from(paperTrades).orderBy(desc(paperTrades.closedAt)).limit(input?.limit ?? 20);
+        return rows.map(t => ({ id: t.id, exchange: "paper", symbol: t.symbol, side: t.direction, size: t.quantity, entryPrice: t.entryPrice, exitPrice: t.exitPrice, pnl: t.pnl, closedAt: t.closedAt }));
+      }),
+    openPosition: publicProcedure
+      .input(z.object({
+        exchange: z.string().default("paper"),
+        symbol: z.string(),
+        side: z.enum(["long", "short"]),
+        size: z.number().positive(),
+        leverage: z.number().min(1).max(100).default(1),
+      }))
+      .mutation(async ({ input }) => {
+        const d = await getDb();
+        if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const ticker = input.symbol.replace("/", "").toUpperCase();
+        let entryPrice = 0;
+        try {
+          const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=" + ticker);
+          if (res.ok) { const data = await res.json() as { price: string }; entryPrice = parseFloat(data.price); }
+        } catch {}
+        const notionalValue = entryPrice * input.size;
+        const ids = await d.insert(paperPositions).values({
+          symbol: ticker, direction: input.side, entryPrice, currentPrice: entryPrice,
+          quantity: input.size, notionalValue, leverage: input.leverage,
+          signalScore: 0, triggerSignal: "手动开仓(" + input.exchange + ")", openedAt: new Date(),
+        });
+        return { id: Number((ids as any)[0]?.insertId ?? 0), entryPrice, symbol: ticker, side: input.side };
+      }),
+    closePosition: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const d = await getDb();
+        if (!d) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+        const positions = await d.select().from(paperPositions).where(eq(paperPositions.id, input.id)).limit(1);
+        if (!positions[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Position not found" });
+        const pos = positions[0];
+        const ticker = pos.symbol.endsWith("USDT") ? pos.symbol : pos.symbol + "USDT";
+        let exitPrice = pos.currentPrice ?? pos.entryPrice;
+        try {
+          const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=" + ticker);
+          if (res.ok) { const data = await res.json() as { price: string }; exitPrice = parseFloat(data.price); }
+        } catch {}
+        const lev = pos.leverage || 1;
+        const notional = pos.notionalValue ?? 500;
+        const pnl = pos.direction === "long"
+          ? ((exitPrice - pos.entryPrice) / pos.entryPrice) * lev * notional
+          : ((pos.entryPrice - exitPrice) / pos.entryPrice) * lev * notional;
+        const pnlPct = pos.direction === "long"
+          ? ((exitPrice - pos.entryPrice) / pos.entryPrice) * lev * 100
+          : ((pos.entryPrice - exitPrice) / pos.entryPrice) * lev * 100;
+        const holdingMinutes = Math.round((Date.now() - new Date(pos.openedAt).getTime()) / 60000);
+        await d!.insert(paperTrades).values({
+          symbol: pos.symbol, direction: pos.direction, entryPrice: pos.entryPrice, exitPrice,
+          quantity: pos.quantity, notionalValue: notional, leverage: lev,
+          pnl, pnlPct, closeReason: "manual", signalScore: pos.signalScore,
+          triggerSignal: pos.triggerSignal ?? "", holdingMinutes, openedAt: pos.openedAt, closedAt: new Date(),
+        });
+        await d!.delete(paperPositions).where(eq(paperPositions.id, input.id));
+        return { success: true, pnl, pnlPct };
+      }),
+  }),
 });
 ;
 

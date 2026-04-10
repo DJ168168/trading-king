@@ -50,24 +50,24 @@ export default function QuantSim() {
   });
 
   const closePos = trpc.sim.closePosition.useMutation({
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       toast.success(`平仓成功！盈亏: ${data.pnl >= 0 ? "+" : ""}$${data.pnl.toFixed(2)}`);
       setClosingId(null);
       refetch();
     },
-    onError: (err) => { toast.error(`平仓失败: ${err.message}`); setClosingId(null); },
+    onError: (err: any) => { toast.error(`平仓失败: ${err.message}`); setClosingId(null); },
   });
 
   const handleOpen = () => {
     const sizeNum = parseFloat(size);
     const levNum = parseInt(leverage);
     if (isNaN(sizeNum) || sizeNum <= 0) { toast.error("请输入有效的数量"); return; }
-    openPos.mutate({ exchange, symbol, side, size: sizeNum, leverage: levNum, sendTelegram: true });
+    openPos.mutate({ exchange, symbol, side, size: sizeNum, leverage: levNum });
   };
 
   const handleClose = (id: number) => {
     setClosingId(id);
-    closePos.mutate({ id, sendTelegram: true });
+    closePos.mutate({ id });
   };
 
   const posList = (positions as any[]) ?? [];
