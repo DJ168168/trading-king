@@ -159,3 +159,10 @@
 - [x] 仪表盘自动交易一键 Toggle 开关（已存在 Switch 组件，调用 toggleAutoMutation）
 - [x] 策略中心实时条件检测（已存在 trpc.strategies.evaluate 每30秒刷新，显示触发状态）
 - [x] 量化模拟交易页面（QuantSim.tsx）完整接入 sim 路由（持仓/历史/开仓/平仓）
+
+## 实盘+模拟盘真实运行（2026-04-10 第八批）
+- [ ] 修复模拟盘策略条件：基于真实 ValueScan 数据字段放宽触发条件（bullishRatio=0/"" 时仍能触发）
+- [x] 模拟盘开仓/平仓/止损/止盈时发送 Telegram 通知
+- [ ] 新建实盘引擎（liveTradingEngine.ts）：主动轮询 ValueScan 信号 → 评分 → 真实下单 → Telegram 推送
+- [ ] 前端仪表盘显示模拟盘和实盘引擎各自的运行状态（绿点/红点 + 最近一次触发时间）
+- [ ] 前端持仓管理页面区分模拟盘持仓和实盘持仓

@@ -62,6 +62,14 @@ export default function Dashboard() {
   const { data: cacheStatus } = trpc.signals.cacheStatus.useQuery(undefined, { refetchInterval: 5000 });
   const { data: fearGreed } = trpc.valueScan.fearGreed.useQuery(undefined, { refetchInterval: 60000 });
   const { data: vsWarn } = trpc.valueScan.warnMessages.useQuery({ pageNum: 1, pageSize: 6 }, { refetchInterval: 30000 });
+  const { data: engineStatus } = trpc.paperTrading.engineStatus.useQuery(undefined, { refetchInterval: 5000 });
+  const toggleLiveEngine = trpc.paperTrading.toggleLiveEngine.useMutation({
+    onSuccess: (data) => {
+      utils.paperTrading.engineStatus.invalidate();
+      toast.success(data.running ? "🔴 实盘引擎已启动！每60秒轮询信号" : "⏸ 实盘引擎已暂停");
+    },
+    onError: () => toast.error("切换实盘引擎失败")
+  });
 
   const mockMutation = trpc.signals.mock.useMutation({
     onSuccess: (data) => {
@@ -224,6 +232,39 @@ export default function Dashboard() {
                   />
                 </div>
               </div>
+              {/* 实盘引擎状态 */}
+              <div className="flex justify-between items-center mt-2">
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <span className={cn("w-1.5 h-1.5 rounded-full", engineStatus?.live?.running ? "bg-red-500 animate-pulse" : "bg-muted-foreground")} />
+                  实盘引擎
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("text-xs font-medium", engineStatus?.live?.running ? "text-red-400" : "text-muted-foreground")}>
+                    {engineStatus?.live?.running ? "运行中" : "已停止"}
+                  </span>
+                  <Switch
+                    checked={!!engineStatus?.live?.running}
+                    onCheckedChange={(checked) => toggleLiveEngine.mutate({ enabled: checked })}
+                    disabled={toggleLiveEngine.isPending}
+                    className="scale-75 origin-right"
+                  />
+                </div>
+              </div>
+              {/* 模拟盘引擎状态 */}
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <span className={cn("w-1.5 h-1.5 rounded-full", engineStatus?.paper?.running ? "bg-yellow-400 animate-pulse" : "bg-muted-foreground")} />
+                  模拟盘引擎
+                </span>
+                <span className={cn("text-xs font-medium", engineStatus?.paper?.running ? "text-yellow-400" : "text-muted-foreground")}>
+                  {engineStatus?.paper?.running ? "运行中" : "已停止"}
+                </span>
+              </div>
+              {engineStatus?.live?.lastOrderTime && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  实盘最近下单: {new Date(engineStatus.live.lastOrderTime).toLocaleTimeString("zh-CN")}
+                </div>
+              )}
             </div>
           </div>
         </div>

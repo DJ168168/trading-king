@@ -158,8 +158,8 @@ export default function PaperTrading() {
           <p className="text-sm text-muted-foreground mt-1">基于 ValueScan 实时信号自动开仓/平仓，验证策略后再转入实盘</p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={engineStatus?.running ? "default" : "secondary"} className={engineStatus?.running ? "bg-green-500/20 text-green-400 border-green-500/30" : ""}>
-            {engineStatus?.running ? "● 引擎运行中" : "○ 引擎停止"}
+          <Badge variant={engineStatus?.paper?.running ? "default" : "secondary"} className={engineStatus?.paper?.running ? "bg-green-500/20 text-green-400 border-green-500/30" : ""}>
+            {engineStatus?.paper?.running ? "● 引擎运行中" : "○ 引擎停止"}
           </Badge>
           <Button
             variant="outline"

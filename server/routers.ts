@@ -36,8 +36,11 @@ import { createBybitService } from "./bybitService";
 import { createGateService } from "./gateService";
 import { createBitgetService } from "./bitgetService";
 import {
-  startPaperTradingEngine, stopPaperTradingEngine, isEngineRunning, runPaperTradingCycle
+  startPaperTradingEngine, stopPaperTradingEngine, isEngineRunning, runPaperTradingCycle, getEngineStatus
 } from "./paperTradingEngine";
+import {
+  startLiveTradingEngine, stopLiveTradingEngine, isLiveEngineRunning, getLiveEngineStatus
+} from "./liveTradingEngine";
 import { getDb } from "./db";
 import {
   getFearGreedHistory, getGlobalMarket, getTrendingCoins, calcBullBearScore,
@@ -1931,7 +1934,21 @@ export const appRouter = router({
       }),
 
     // 引擎状态
-    engineStatus: publicProcedure.query(() => ({ running: isEngineRunning() })),
+    engineStatus: publicProcedure.query(() => ({
+      paper: getEngineStatus(),
+      live: getLiveEngineStatus(),
+    })),
+    // 启动/停止实盘引擎
+    toggleLiveEngine: publicProcedure
+      .input(z.object({ enabled: z.boolean() }))
+      .mutation(({ input }) => {
+        if (input.enabled && !isLiveEngineRunning()) {
+          startLiveTradingEngine();
+        } else if (!input.enabled && isLiveEngineRunning()) {
+          stopLiveTradingEngine();
+        }
+        return { success: true, running: isLiveEngineRunning() };
+      }),
 
     // 手动触发一次交易周期（用于测试）
     triggerCycle: publicProcedure.mutation(async () => {
