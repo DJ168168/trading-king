@@ -1827,6 +1827,7 @@ export const appRouter = router({
       
       // 自动初始化模拟账户
       try {
+        console.log("[PaperTrading] 尝试初始化账户 ID: 1");
         await d.insert(paperAccount).values({
           id: 1,
           balance: 10000,
@@ -1835,10 +1836,17 @@ export const appRouter = router({
           peakBalance: 10000,
           autoTradingEnabled: false,
         });
+        console.log("[PaperTrading] 插入成功，正在重新查询...");
         const newRows = await d.select().from(paperAccount).where(eq(paperAccount.id, 1)).limit(1);
+        console.log("[PaperTrading] 重新查询结果:", newRows[0] ? "成功" : "失败");
         return newRows[0] ?? null;
-      } catch (e) {
-        console.error("[PaperTrading] 自动初始化失败:", e);
+      } catch (e: any) {
+        console.error("[PaperTrading] 自动初始化失败:", e.message);
+        // 如果是因为 ID 冲突，尝试直接返回
+        if (e.message.includes("Duplicate entry")) {
+           const retryRows = await d.select().from(paperAccount).where(eq(paperAccount.id, 1)).limit(1);
+           return retryRows[0] ?? null;
+        }
         return null;
       }
     }),
