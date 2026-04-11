@@ -1,221 +1,129 @@
-/**
- * Gate.io 合约实盘 API 服务
- * 支持 USDT 永续合约（Futures）
- * 文档：https://www.gate.io/docs/developers/apiv4/
- */
-import crypto from "crypto";
-import axios, { AxiosInstance } from "axios";
+import crypto from "node:crypto";
 
-const GATE_BASE = "https://api.gateio.ws";
-
-export interface GateConfig {
+type GateCredentials = {
   apiKey: string;
   secretKey: string;
+  baseUrl?: string;
+};
+
+function buildQuery(params: Record<string, any>) {
+  return new URLSearchParams(
+    Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => [k, String(v)]),
+  ).toString();
 }
 
-export interface GateOrderParams {
-  contract: string;       // e.g. "BTC_USDT"
-  size: number;           // 正数做多，负数做空（张数）
-  price?: string;         // 限价，0 表示市价
-  tif?: "gtc" | "ioc" | "poc" | "fok";
-  text?: string;          // 客户端订单 ID
-  reduce_only?: boolean;
-  auto_size?: "close_long" | "close_short";
-  iceberg?: number;
-  close?: boolean;
-}
+class GateService {
+  private readonly apiKey: string;
+  private readonly secretKey: string;
+  private readonly baseUrl: string;
 
-export interface GatePosition {
-  contract: string;
-  size: number;
-  entry_price: string;
-  mark_price: string;
-  realised_pnl: string;
-  unrealised_pnl: string;
-  liq_price: string;
-  leverage: string;
-  mode: string;
-  cross_leverage_limit: string;
-  update_time: number;
-}
-
-export interface GateBalance {
-  total: string;
-  unrealised_pnl: string;
-  position_margin: string;
-  order_margin: string;
-  available: string;
-  currency: string;
-}
-
-export interface GateOrder {
-  id: number;
-  contract: string;
-  size: number;
-  price: string;
-  fill_price: string;
-  status: string;
-  tif: string;
-  text: string;
-  create_time: number;
-  finish_time: number;
-}
-
-export class GateService {
-  private client: AxiosInstance;
-  private apiKey: string;
-  private secretKey: string;
-
-  constructor(config: GateConfig) {
-    this.apiKey = config.apiKey;
-    this.secretKey = config.secretKey;
-    this.client = axios.create({ baseURL: GATE_BASE, timeout: 10000 });
+  constructor(creds: GateCredentials) {
+    this.apiKey = creds.apiKey || "";
+    this.secretKey = creds.secretKey || "";
+    this.baseUrl = creds.baseUrl || "https://api.gateio.ws/api/v4";
   }
 
-  private sign(method: string, path: string, query: string, body: string, timestamp: string): string {
-    const bodyHash = crypto.createHash("sha512").update(body || "").digest("hex");
-    const signString = `${method}\n${path}\n${query}\n${bodyHash}\n${timestamp}`;
-    return crypto.createHmac("sha512", this.secretKey).update(signString).digest("hex");
+  private sign(method: string, path: string, queryString: string, body = "") {
+    const ts = String(Math.floor(Date.now() / 1000));
+    const bodyHash = crypto.createHash("sha512").update(body).digest("hex");
+    const signString = [method, path, queryString, bodyHash, ts].join("\n");
+    const sign = crypto.createHmac("sha512", this.secretKey).update(signString).digest("hex");
+    return { ts, sign };
   }
 
-  private async request<T>(method: "GET" | "POST" | "DELETE", path: string, params: Record<string, any> = {}): Promise<T> {
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    let query = "";
-    let body = "";
-
-    if (method === "GET" || method === "DELETE") {
-      query = new URLSearchParams(params).toString();
-    } else {
-      body = JSON.stringify(params);
-    }
-
-    const signature = this.sign(method, path, query, body, timestamp);
-
-    const headers: Record<string, string> = {
-      "KEY": this.apiKey,
-      "SIGN": signature,
-      "Timestamp": timestamp,
-      "Content-Type": "application/json",
-    };
-
-    const url = query ? `${path}?${query}` : path;
-    const response = await this.client.request<T>({
-      method, url, headers,
-      data: method === "POST" ? body : undefined,
+  private async request<T = any>(method: "GET" | "POST" | "DELETE", path: string, query: Record<string, any> = {}, body?: any): Promise<T> {
+    const queryString = buildQuery(query);
+    const payload = body ? JSON.stringify(body) : "";
+    const { ts, sign } = this.sign(method, path, queryString, payload);
+    const url = `${this.baseUrl}${path}${queryString ? `?${queryString}` : ""}`;
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        KEY: this.apiKey,
+        Timestamp: ts,
+        SIGN: sign,
+      },
+      body: payload || undefined,
     });
-
-    return response.data;
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : null;
+    if (!res.ok) throw new Error(json?.label || json?.message || `Gate HTTP ${res.status}`);
+    return json as T;
   }
 
-  /** 获取账户余额 */
-  async getBalance(settle = "usdt"): Promise<GateBalance | null> {
-    try {
-      return await this.request<GateBalance>("GET", `/api/v4/futures/${settle}/accounts`);
-    } catch (e: any) {
-      console.error("[Gate.io] getBalance error:", e.message);
-      return null;
-    }
+  testConnection() {
+    return this.getBalance().then(() => ({ success: true })).catch((e: any) => ({ success: false, error: e?.message || "连接失败" }));
   }
 
-  /** 获取持仓 */
-  async getPositions(settle = "usdt"): Promise<GatePosition[]> {
-    try {
-      const result = await this.request<GatePosition[]>("GET", `/api/v4/futures/${settle}/positions`);
-      return (result ?? []).filter(p => p.size !== 0);
-    } catch (e: any) {
-      console.error("[Gate.io] getPositions error:", e.message);
-      return [];
-    }
+  async getBalance() {
+    const rows = await this.request<any[]>("GET", "/wallet/total_balance");
+    const details = Array.isArray(rows) ? rows[0] : rows;
+    const total = Number(details?.total?.amount || details?.details?.futures?.amount || details?.details?.spot?.amount || 0);
+    const available = Number(details?.available?.amount || details?.details?.futures?.available || total || 0);
+    return { balance: total, available };
   }
 
-  /** 下单 */
-  async placeOrder(settle = "usdt", params: GateOrderParams): Promise<GateOrder | null> {
-    try {
-      return await this.request<GateOrder>("POST", `/api/v4/futures/${settle}/orders`, params);
-    } catch (e: any) {
-      console.error("[Gate.io] placeOrder error:", e.message);
-      return null;
-    }
+  async getUSDTBalance() {
+    const res = await this.request<any[]>("GET", "/futures/usdt/accounts");
+    const row = Array.isArray(res) ? res[0] : res;
+    return {
+      currency: "USDT",
+      balance: Number(row?.total || row?.available || 0),
+      available: Number(row?.available || row?.total || 0),
+    };
   }
 
-  /** 取消订单 */
-  async cancelOrder(settle = "usdt", orderId: string): Promise<boolean> {
-    try {
-      await this.request("DELETE", `/api/v4/futures/${settle}/orders/${orderId}`);
-      return true;
-    } catch (e: any) {
-      console.error("[Gate.io] cancelOrder error:", e.message);
-      return false;
-    }
+  getPositions(settle = "usdt") {
+    return this.request<any[]>("GET", `/futures/${settle}/positions`);
   }
 
-  /** 获取未成交订单 */
-  async getOpenOrders(settle = "usdt", contract?: string): Promise<GateOrder[]> {
-    try {
-      const params: Record<string, any> = { status: "open" };
-      if (contract) params.contract = contract;
-      return await this.request<GateOrder[]>("GET", `/api/v4/futures/${settle}/orders`, params);
-    } catch (e: any) {
-      console.error("[Gate.io] getOpenOrders error:", e.message);
-      return [];
-    }
+  placeOrder(settle = "usdt", order: Record<string, any>) {
+    return this.request<any>("POST", `/futures/${settle}/orders`, {}, order);
   }
 
-  /** 设置杠杆 */
-  async setLeverage(settle = "usdt", contract: string, leverage: number): Promise<boolean> {
-    try {
-      await this.request("POST", `/api/v4/futures/${settle}/positions/${contract}/leverage`, { leverage });
-      return true;
-    } catch (e: any) {
-      console.error("[Gate.io] setLeverage error:", e.message);
-      return false;
-    }
+  async setLeverage(contract: string, leverage: number) {
+    return this.request<any>("POST", `/futures/usdt/positions/${encodeURIComponent(contract)}/leverage`, {}, { leverage: String(leverage) });
   }
 
-  /** 平仓（市价） */
-  async closePosition(settle = "usdt", contract: string, size: number): Promise<boolean> {
-    try {
-      // size 为正数表示平多（卖出），负数表示平空（买入）
-      await this.placeOrder(settle, {
-        contract,
-        size: -size, // 反向平仓
-        price: "0",
-        tif: "ioc",
-        reduce_only: true,
-      });
-      return true;
-    } catch (e: any) {
-      console.error("[Gate.io] closePosition error:", e.message);
-      return false;
-    }
+  async openLong(symbol: string, quantity: number | string, leverage = 5) {
+    const contract = symbol.toUpperCase().includes("_") ? symbol.toUpperCase() : `${symbol.toUpperCase().replace(/USDT$/, "")}_USDT`;
+    await this.setLeverage(contract, leverage);
+    return this.placeOrder("usdt", { contract, size: String(Math.abs(Number(quantity))), price: "0", tif: "ioc" });
   }
 
-  /** 测试连接 */
-  async testConnection(): Promise<{ success: boolean; message: string }> {
-    try {
-      const balance = await this.getBalance();
-      if (!balance) return { success: false, message: "无法获取账户余额" };
-      return {
-        success: true,
-        message: `连接成功，可用余额: ${parseFloat(balance.available).toFixed(2)} USDT`,
-      };
-    } catch (e: any) {
-      return { success: false, message: e.message };
+  async openShort(symbol: string, quantity: number | string, leverage = 5) {
+    const contract = symbol.toUpperCase().includes("_") ? symbol.toUpperCase() : `${symbol.toUpperCase().replace(/USDT$/, "")}_USDT`;
+    await this.setLeverage(contract, leverage);
+    return this.placeOrder("usdt", { contract, size: String(-Math.abs(Number(quantity))), price: "0", tif: "ioc" });
+  }
+
+  async closePosition(settle = "usdt", contract: string, size?: string | number) {
+    const positions = await this.getPositions(settle);
+    const found = positions.find((p: any) => p.contract === contract || p.symbol === contract);
+    const currentSize = Number(size ?? found?.size ?? 0);
+    if (!currentSize) return { success: true, message: "无持仓可平" };
+    return this.placeOrder(settle, { contract, size: String(currentSize > 0 ? -Math.abs(currentSize) : Math.abs(currentSize)), price: "0", tif: "ioc", reduce_only: true });
+  }
+
+  async closeAllPositions(symbol?: string) {
+    const positions = await this.getPositions("usdt");
+    const filtered = symbol
+      ? positions.filter((p: any) => p.contract === symbol || p.contract === `${symbol.toUpperCase().replace(/USDT$/, "")}_USDT`)
+      : positions;
+    const results = [] as any[];
+    for (const pos of filtered) {
+      const size = Number(pos.size ?? 0);
+      if (!size) continue;
+      results.push(await this.placeOrder("usdt", { contract: pos.contract, size: String(size > 0 ? -Math.abs(size) : Math.abs(size)), price: "0", tif: "ioc", reduce_only: true }));
     }
+    return results;
   }
 }
 
-let _gateInstance: GateService | null = null;
-
-export function createGateService(config: GateConfig): GateService {
-  return new GateService(config);
-}
-
-export function getGateInstance(): GateService | null {
-  return _gateInstance;
-}
-
-export function initGateService(config: GateConfig): GateService {
-  _gateInstance = new GateService(config);
-  return _gateInstance;
+export function createGateService(creds: GateCredentials) {
+  return new GateService(creds);
 }

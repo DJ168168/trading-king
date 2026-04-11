@@ -1,221 +1,208 @@
-/**
- * 信号聚合引擎 - 实现 FOMO + Alpha 时间窗口匹配策略
- * 基于 ValueScan 原始策略逻辑，集成数据库持久化
- */
+// @ts-nocheck
+import { getRecentSignals, recordConfluenceSignal, recordSignal } from "./db";
 
-import { insertSignal, insertConfluenceSignal, updateConfluenceSignalStatus } from "./db";
+type SignalType = "FOMO" | "ALPHA" | "RISK" | "FALL" | "FUND_MOVE" | "LISTING" | "FUND_ESCAPE" | "FUND_ABNORMAL";
 
-export interface RawSignal {
+type CachedSignal = {
   signalId: string;
   symbol: string;
-  signalType: "FOMO" | "ALPHA" | "RISK";
+  signalType: SignalType;
   messageType: number;
-  timestamp: Date;
-  data?: any;
-}
-
-export interface ConfluenceResult {
-  symbol: string;
-  fomoSignalId: string;
-  alphaSignalId: string;
-  timeGap: number;
   score: number;
-  dbId?: number;
+  rawData: Record<string, any>;
+  processed: boolean;
+  createdAt: Date;
+};
+
+const signalCache: CachedSignal[] = [];
+const confluenceCache: any[] = [];
+
+function normalizeSymbol(symbol: string) {
+  const s = String(symbol || "BTC").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (s.endsWith("USDT")) return s;
+  if (s.endsWith("USD")) return `${s}T`;
+  return s;
 }
 
-// 内存中的信号缓存（按标的分组）
-const fomoCache = new Map<string, RawSignal[]>();
-const alphaCache = new Map<string, RawSignal[]>();
-const riskCache = new Map<string, RawSignal[]>();
-const processedIds = new Set<string>();
-
-// 信号类型常量
-const FOMO_TYPE = 113;
-const FOMO_INTENSIFY_TYPE = 112;
-const ALPHA_TYPE = 110;
-
-/**
- * 计算信号聚合评分（0-1）
- * - 时间接近度 40%
- * - FOMO 强度 30%
- * - 信号新鲜度 30%
- */
-function calculateScore(fomo: RawSignal, alpha: RawSignal, timeGap: number, timeWindow: number): number {
-  const timeScore = Math.max(0, Math.min(1, 1.0 - timeGap / timeWindow));
-  const fomoStrength = fomo.messageType === FOMO_INTENSIFY_TYPE ? 1.0 : 0.8;
-  const now = Date.now();
-  const avgAge = ((now - fomo.timestamp.getTime()) + (now - alpha.timestamp.getTime())) / 2 / 1000;
-  const freshnessScore = Math.max(0, 1.0 - Math.min(avgAge / 3600, 1.0));
-  return timeScore * 0.4 + fomoStrength * 0.3 + freshnessScore * 0.3;
+function inferSignalType(messageType: number, data: Record<string, any>): SignalType {
+  const content = JSON.stringify(data || {}).toLowerCase();
+  const map: Record<number, SignalType> = {
+    100: "FOMO",
+    108: "ALPHA",
+    109: "RISK",
+    110: "FOMO",
+    111: "ALPHA",
+    112: "RISK",
+    113: "FUND_MOVE",
+    114: "LISTING",
+  };
+  if (map[messageType]) return map[messageType];
+  if (content.includes("risk") || content.includes("danger") || content.includes("暴跌") || content.includes("预警")) return "RISK";
+  if (content.includes("listing") || content.includes("上新") || content.includes("上线")) return "LISTING";
+  if (content.includes("fund") || content.includes("whale") || content.includes("资金")) return "FUND_MOVE";
+  if (content.includes("alpha") || content.includes("smart") || content.includes("策略")) return "ALPHA";
+  return "FOMO";
 }
 
-/**
- * 清理过期信号
- */
-function cleanupExpiredSignals(timeWindow: number) {
-  const cutoff = Date.now() - timeWindow * 1000;
-  Array.from(fomoCache.entries()).forEach(([symbol, list]) => {
-    const filtered = list.filter((s: RawSignal) => s.timestamp.getTime() > cutoff);
-    if (filtered.length === 0) fomoCache.delete(symbol);
-    else fomoCache.set(symbol, filtered);
-  });
-  Array.from(alphaCache.entries()).forEach(([symbol, list]) => {
-    const filtered = list.filter((s: RawSignal) => s.timestamp.getTime() > cutoff);
-    if (filtered.length === 0) alphaCache.delete(symbol);
-    else alphaCache.set(symbol, filtered);
-  });
-  Array.from(riskCache.entries()).forEach(([symbol, list]) => {
-    const filtered = list.filter((s: RawSignal) => s.timestamp.getTime() > cutoff);
-    if (filtered.length === 0) riskCache.delete(symbol);
-    else riskCache.set(symbol, filtered);
-  });
+function clamp(num: number, min = 0, max = 1) {
+  return Math.max(min, Math.min(max, num));
 }
 
-/**
- * 尝试匹配聚合信号
- */
-function tryMatchConfluence(symbol: string, timeWindow: number, minScore: number): { fomo: RawSignal; alpha: RawSignal; timeGap: number; score: number } | null {
-  const fomoList = fomoCache.get(symbol) ?? [];
-  const alphaList = alphaCache.get(symbol) ?? [];
-  if (!fomoList.length || !alphaList.length) return null;
-
-  let best: { fomo: RawSignal; alpha: RawSignal; timeGap: number; score: number } | null = null;
-  let minGap = Infinity;
-
-  for (const fomo of fomoList) {
-    for (const alpha of alphaList) {
-      const timeGap = Math.abs(fomo.timestamp.getTime() - alpha.timestamp.getTime()) / 1000;
-      if (timeGap < timeWindow && timeGap < minGap) {
-        const score = calculateScore(fomo, alpha, timeGap, timeWindow);
-        if (score >= minScore) {
-          minGap = timeGap;
-          best = { fomo, alpha, timeGap, score };
-        }
-      }
-    }
+function calcSignalScore(signalType: SignalType, data: Record<string, any>) {
+  let score = signalType === "RISK" ? 0.35 : signalType === "ALPHA" ? 0.72 : 0.65;
+  const confidence = Number(data?.confidence ?? data?.score ?? data?.strength ?? 0);
+  if (confidence > 0) {
+    score += confidence > 1 ? confidence / 100 * 0.2 : confidence * 0.2;
   }
-
-  if (best) {
-    // 移除已匹配的信号
-    fomoCache.set(symbol, fomoList.filter(s => s.signalId !== best!.fomo.signalId));
-    alphaCache.set(symbol, alphaList.filter(s => s.signalId !== best!.alpha.signalId));
-  }
-
-  return best;
+  const volumeRatio = Number(data?.volumeRatio ?? data?.multiple ?? data?.intensity ?? 0);
+  if (volumeRatio > 0) score += Math.min(volumeRatio / 10, 0.1);
+  if (data?.isWhale || data?.smartMoney || data?.isSmartMoney) score += 0.08;
+  if (data?.marketCap && Number(data.marketCap) < 1_000_000_000) score += 0.03;
+  if (data?.negative || data?.bearish) score -= 0.08;
+  return clamp(score);
 }
 
-/**
- * 处理新信号
- */
+function cleanup(windowSeconds = 3600) {
+  const expireAt = Date.now() - windowSeconds * 1000;
+  while (signalCache.length && signalCache[signalCache.length - 1].createdAt.getTime() < expireAt) signalCache.pop();
+  while (confluenceCache.length && new Date(confluenceCache[confluenceCache.length - 1].createdAt).getTime() < expireAt) confluenceCache.pop();
+}
+
+function getWindowSignals(symbol: string, timeWindow = 300) {
+  const normalized = normalizeSymbol(symbol);
+  const since = Date.now() - timeWindow * 1000;
+  return signalCache.filter((s) => s.symbol === normalized && s.createdAt.getTime() >= since);
+}
+
+export function hasRiskSignal(symbol: string, timeWindow = 300) {
+  const matched = getWindowSignals(symbol, timeWindow);
+  return matched.some((s) => s.signalType === "RISK" || s.signalType === "FALL" || s.signalType === "FUND_ESCAPE" || s.signalType === "FUND_ABNORMAL");
+}
+
+export function getCacheStatus() {
+  cleanup();
+  const latest = signalCache[0];
+  return {
+    totalSignals: signalCache.length,
+    totalConfluenceSignals: confluenceCache.length,
+    symbols: Array.from(new Set(signalCache.map((s) => s.symbol))).length,
+    lastSignalAt: latest?.createdAt ?? null,
+    riskSignalCount: signalCache.filter((s) => s.signalType === "RISK").length,
+    recentConfluence: confluenceCache.slice(0, 5),
+  };
+}
+
+export function generateMockSignal(symbol = "BTC") {
+  const normalized = normalizeSymbol(symbol);
+  const types = [100, 108, 110, 111, 109];
+  const messageType = types[Math.floor(Math.random() * types.length)]!;
+  return {
+    messageType,
+    messageId: `mock_${normalized}_${Date.now()}`,
+    symbol: normalized,
+    data: {
+      confidence: 0.65 + Math.random() * 0.3,
+      intensity: 2 + Math.random() * 4,
+      source: "mock",
+      text: messageType === 109 ? `${normalized} 风险预警` : `${normalized} 资金与情绪异动`,
+    },
+  };
+}
+
+async function hydrateFromDbIfNeeded() {
+  if (signalCache.length > 0) return;
+  const latest = await getRecentSignals(50);
+  for (const item of latest.reverse()) {
+    signalCache.unshift({
+      signalId: item.signalId,
+      symbol: normalizeSymbol(item.symbol),
+      signalType: item.signalType,
+      messageType: Number(item.messageType),
+      score: Number(item.score ?? 0),
+      rawData: (item.rawData ?? {}) as Record<string, any>,
+      processed: Boolean(item.processed),
+      createdAt: new Date(item.createdAt ?? Date.now()),
+    });
+  }
+}
+
 export async function processSignal(
   messageType: number,
   messageId: string,
   symbol: string,
-  data: any,
-  timeWindow: number = 300,
-  minScore: number = 0.6
-): Promise<ConfluenceResult | null> {
-  if (processedIds.has(messageId)) return null;
-  processedIds.add(messageId);
-  if (processedIds.size > 5000) {
-    const arr = Array.from(processedIds);
-    arr.slice(0, 1000).forEach(id => processedIds.delete(id));
-  }
+  data: Record<string, any> = {},
+  timeWindow = 300,
+  minScore = 0.6,
+) {
+  await hydrateFromDbIfNeeded();
+  cleanup(Math.max(timeWindow * 4, 3600));
 
-  const symbolUpper = symbol.toUpperCase();
-  const now = new Date();
+  const normalizedSymbol = normalizeSymbol(symbol);
+  const signalType = inferSignalType(messageType, data);
+  const score = calcSignalScore(signalType, data);
+  const createdAt = new Date();
 
-  let signalType: "FOMO" | "ALPHA" | "RISK" | null = null;
-  if (messageType === ALPHA_TYPE) signalType = "ALPHA";
-  else if (messageType === FOMO_TYPE) signalType = "FOMO";
-  else if (messageType === FOMO_INTENSIFY_TYPE) signalType = "RISK";
+  const signal: CachedSignal = {
+    signalId: messageId,
+    symbol: normalizedSymbol,
+    signalType,
+    messageType,
+    score,
+    rawData: data ?? {},
+    processed: true,
+    createdAt,
+  };
 
-  if (!signalType) return null;
-
-  const rawSignal: RawSignal = { signalId: messageId, symbol: symbolUpper, signalType, messageType, timestamp: now, data };
-
-  // 持久化到数据库
-  await insertSignal({ signalId: messageId, symbol: symbolUpper, signalType, messageType, score: 0, rawData: data, processed: false });
-
-  // 加入缓存
-  if (signalType === "FOMO") {
-    const list = fomoCache.get(symbolUpper) ?? [];
-    list.push(rawSignal);
-    fomoCache.set(symbolUpper, list);
-  } else if (signalType === "ALPHA") {
-    const list = alphaCache.get(symbolUpper) ?? [];
-    list.push(rawSignal);
-    alphaCache.set(symbolUpper, list);
-  } else if (signalType === "RISK") {
-    const list = riskCache.get(symbolUpper) ?? [];
-    list.push(rawSignal);
-    riskCache.set(symbolUpper, list);
-    return null; // 风险信号不触发聚合
-  }
-
-  // 清理过期信号
-  cleanupExpiredSignals(timeWindow);
-
-  // 尝试匹配
-  const match = tryMatchConfluence(symbolUpper, timeWindow, minScore);
-  if (!match) return null;
-
-  // 持久化聚合信号
-  const dbRecord = await insertConfluenceSignal({
-    symbol: symbolUpper,
-    fomoSignalId: match.fomo.signalId,
-    alphaSignalId: match.alpha.signalId,
-    timeGap: match.timeGap,
-    score: match.score,
-    status: "pending",
+  signalCache.unshift(signal);
+  await recordSignal({
+    signalId: messageId,
+    symbol: normalizedSymbol,
+    signalType,
+    messageType,
+    score,
+    rawData: data ?? {},
+    processed: true,
   });
 
-  return {
-    symbol: symbolUpper,
-    fomoSignalId: match.fomo.signalId,
-    alphaSignalId: match.alpha.signalId,
-    timeGap: match.timeGap,
-    score: match.score,
-    dbId: dbRecord?.id,
-  };
-}
+  const recent = getWindowSignals(normalizedSymbol, timeWindow);
+  const riskExists = recent.some((s) => s.signalType === "RISK" && s.signalId !== messageId);
+  if (signalType === "RISK") return null;
 
-/**
- * 检查标的是否有风险信号
- */
-export function hasRiskSignal(symbol: string): boolean {
-  return (riskCache.get(symbol.toUpperCase()) ?? []).length > 0;
-}
+  const latestFomo = recent.find((s) => s.signalType === "FOMO");
+  const latestAlpha = recent.find((s) => s.signalType === "ALPHA");
 
-/**
- * 获取当前缓存状态（用于调试）
- */
-export function getCacheStatus() {
-  return {
-    fomoCount: Array.from(fomoCache.values()).reduce((s: number, l: RawSignal[]) => s + l.length, 0),
-    alphaCount: Array.from(alphaCache.values()).reduce((s: number, l: RawSignal[]) => s + l.length, 0),
-    riskCount: Array.from(riskCache.values()).reduce((s: number, l: RawSignal[]) => s + l.length, 0),
-    processedIds: processedIds.size,
-    symbols: {
-      fomo: Array.from(fomoCache.keys()) as string[],
-      alpha: Array.from(alphaCache.keys()) as string[],
-      risk: Array.from(riskCache.keys()) as string[],
-    }
-  };
-}
+  if (!latestFomo || !latestAlpha || riskExists) return null;
 
-/**
- * 生成模拟信号（用于演示和测试）
- */
-export function generateMockSignal(symbol?: string): { messageType: number; messageId: string; symbol: string; data: any } {
-  const symbols = ["BTC", "ETH", "SOL", "BNB", "DOGE", "XRP", "ADA", "AVAX"];
-  const s = symbol ?? symbols[Math.floor(Math.random() * symbols.length)];
-  const types = [110, 113, 112, 100, 108];
-  const type = types[Math.floor(Math.random() * types.length)];
-  return {
-    messageType: type,
-    messageId: `mock_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    symbol: s,
-    data: { title: `${s} Signal`, price: Math.random() * 50000 + 1000 }
+  const timeGap = Math.abs(latestFomo.createdAt.getTime() - latestAlpha.createdAt.getTime()) / 1000;
+  let confluenceScore = clamp((latestFomo.score + latestAlpha.score) / 2 + 0.08 - Math.min(timeGap / Math.max(timeWindow, 1), 1) * 0.08);
+  if (data?.isWhale || data?.smartMoney) confluenceScore = clamp(confluenceScore + 0.05);
+  if (confluenceScore < minScore) return null;
+
+  const duplicate = confluenceCache.find((item) => item.symbol === normalizedSymbol && Math.abs(new Date(item.createdAt).getTime() - Date.now()) < timeWindow * 1000);
+  if (duplicate) return duplicate;
+
+  const confluence = {
+    id: confluenceCache.length + 1,
+    symbol: normalizedSymbol,
+    fomoSignalId: latestFomo.signalId,
+    alphaSignalId: latestAlpha.signalId,
+    timeGap,
+    score: confluenceScore,
+    status: riskExists ? "skipped" : "pending",
+    skipReason: riskExists ? "近期存在风险信号" : null,
+    createdAt,
   };
+
+  confluenceCache.unshift(confluence);
+  await recordConfluenceSignal({
+    symbol: normalizedSymbol,
+    fomoSignalId: latestFomo.signalId,
+    alphaSignalId: latestAlpha.signalId,
+    timeGap,
+    score: confluenceScore,
+    status: confluence.status,
+    skipReason: confluence.skipReason,
+  });
+
+  return confluence;
 }

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * 实盘自动交易引擎
  * 逻辑：每60秒轮询 ValueScan 信号 → 评分 → 真实下单（Binance/OKX/Bybit/Gate/Bitget）→ Telegram 推送

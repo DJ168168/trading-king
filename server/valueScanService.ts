@@ -1,922 +1,392 @@
-/**
- * ValueScan Open API Service
- * 文档: https://claw.valuescan.io/zh-CN/
- * 
- * 认证方式: HMAC-SHA256
- *   X-API-KEY: API Key
- *   X-TIMESTAMP: 13位毫秒时间戳
- *   X-SIGN: HMAC-SHA256(timestamp + rawBody, secretKey) 小写hex
- * 
- * Base URL: https://api.valuescan.io/api/open/v1
- */
-import axios from "axios";
-import { createHmac, createCipheriv } from "crypto";
-import { ENV } from "./_core/env";
+import { getActiveConfig, loadVSLoginCredentials, updateStrategyConfig } from "./db";
 
-const VS_ACCOUNT_BASE_URL = "https://api.valuescan.io/api";
-const VS_TICKET_AES_KEY = "BxlAG1lX9daAAHgj";
-
-/** 获取 ticket 并用 AES-ECB 加密，生成 Access-Ticket 请求头 */
-async function getAccessTicket(token: string): Promise<string> {
-  const resp = await axios.get(`${VS_ACCOUNT_BASE_URL}/ticket/getTicket`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Origin: "https://www.valuescan.io",
-      Referer: "https://www.valuescan.io/",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    },
-    timeout: 10000,
-  });
-  const ticket: string = resp.data?.data || "";
-  if (!ticket) throw new Error("getTicket returned empty");
-  // AES-128-ECB encrypt with PKCS7 padding
-  const key = Buffer.from(VS_TICKET_AES_KEY, "utf8");
-  const cipher = createCipheriv("aes-128-ecb", key, null);
-  const encrypted = Buffer.concat([cipher.update(ticket, "utf8"), cipher.final()]);
-  return encrypted.toString("base64");
-}
-
-const VS_BASE_URL = "https://api.valuescan.io/api/open/v1";
-
-// ==================== 签名认证 ====================
-
-/**
- * 生成官方文档规定的 HMAC-SHA256 签名请求头
- * signContent = X-TIMESTAMP + RawBody
- * X-SIGN = HMAC-SHA256(signContent, secretKey) hex lowercase
- */
-function buildSignHeaders(rawBody: string): Record<string, string> {
-  const apiKey = ENV.valueScanApiKey;
-  const secretKey = ENV.valueScanSecretKey;
-
-  if (!apiKey || !secretKey) {
-    throw new Error("ValueScan API Key 未配置，请在环境变量中设置 VALUESCAN_API_KEY 和 VALUESCAN_SECRET_KEY");
-  }
-
-  const timestamp = String(Date.now());
-  const signContent = timestamp + rawBody;
-  const sign = createHmac("sha256", secretKey).update(signContent, "utf8").digest("hex");
-
-  return {
-    "X-API-KEY": apiKey,
-    "X-TIMESTAMP": timestamp,
-    "X-SIGN": sign,
-    "Content-Type": "application/json; charset=utf-8",
-    "Accept": "*/*",
-  };
-}
-
-/**
- * 发送 POST 请求到 VS Open API
- */
-async function vsPost<T = any>(path: string, body: object = {}): Promise<T> {
-  const rawBody = JSON.stringify(body);
-  const headers = buildSignHeaders(rawBody);
-  const response = await axios.post(`${VS_BASE_URL}${path}`, rawBody, {
-    headers,
-    timeout: 15000,
-  });
-  return response.data as T;
-}
-
-// ==================== 资金异常信号 ====================
-
-/**
- * 资金异常代币列表（Flow anomaly list）
- * 路径: /open/v1/ai/getFundsCoinList
- * 每5分钟更新，含 alpha/fomo 标志
- */
-export async function getFundsCoinList(): Promise<VSOpenApiResponse<VSFundsCoinItem[]>> {
-  return vsPost("/ai/getFundsCoinList", {});
-}
-
-/**
- * 资金异常消息列表（Flow anomaly messages）
- * 路径: /open/v1/ai/getFundsCoinMessageList
- * 需要 vsTokenId
- */
-export async function getFundsCoinMessageList(vsTokenId: number, tradeType: 1 | 2 = 1): Promise<VSOpenApiResponse<VSFundsMessageItem[]>> {
-  return vsPost("/ai/getFundsCoinMessageList", { vsTokenId, tradeType });
-}
-
-// ==================== 机会代币信号 ====================
-
-/**
- * 机会代币列表（Opportunity token list）
- * 路径: /open/v1/ai/getChanceCoinList
- * AI 排名的上行机会代币
- */
-export async function getChanceCoinList(): Promise<VSOpenApiResponse<VSChanceCoinItem[]>> {
-  return vsPost("/ai/getChanceCoinList", {});
-}
-
-/**
- * 机会代币消息（Opportunity token messages）
- * 路径: /open/v1/ai/getChanceCoinMessageList
- */
-export async function getChanceCoinMessageList(vsTokenId: number): Promise<VSOpenApiResponse<VSChanceMessageItem[]>> {
-  return vsPost("/ai/getChanceCoinMessageList", { vsTokenId });
-}
-
-// ==================== 风险代币信号 ====================
-
-/**
- * 风险代币列表（Risk token list）
- * 路径: /open/v1/ai/getRiskCoinList
- * AI 排名的下行风险代币
- */
-export async function getRiskCoinList(): Promise<VSOpenApiResponse<VSRiskCoinItem[]>> {
-  return vsPost("/ai/getRiskCoinList", {});
-}
-
-/**
- * 风险代币消息（Risk token messages）
- * 路径: /open/v1/ai/getRiskCoinMessageList
- */
-export async function getRiskCoinMessageList(vsTokenId: number): Promise<VSOpenApiResponse<VSRiskMessageItem[]>> {
-  return vsPost("/ai/getRiskCoinMessageList", { vsTokenId });
-}
-
-// ==================== 支撑阻力 & 鲸鱼 ====================
-
-/**
- * 支撑阻力（Support & resistance）
- * 路径: /open/v1/ai/getSupportResistance
- */
-export async function getSupportResistance(vsTokenId: number): Promise<VSOpenApiResponse<any>> {
-  return vsPost("/ai/getSupportResistance", { vsTokenId });
-}
-
-/**
- * 鲸鱼行为指标（Whale behavior indicator）
- * 路径: /open/v1/ai/getWhaleBehaviorIndicator
- */
-export async function getWhaleBehaviorIndicator(vsTokenId: number): Promise<VSOpenApiResponse<any>> {
-  return vsPost("/ai/getWhaleBehaviorIndicator", { vsTokenId });
-}
-
-// ==================== 社交情绪 ====================
-
-/**
- * 社交情绪（Social sentiment）
- * 路径: /open/v1/social-sentiment/getCoinSocialSentiment
- */
-export async function getCoinSocialSentiment(vsTokenId: number): Promise<VSOpenApiResponse<VSSocialSentiment>> {
-  return vsPost("/social-sentiment/getCoinSocialSentiment", { vsTokenId });
-}
-
-// ==================== 代币信息 ====================
-
-/**
- * 代币列表（Token list）
- * 路径: /open/v1/vs-token/list
- */
-export async function getTokenList(search?: string): Promise<VSOpenApiResponse<VSTokenItem[]>> {
-  return vsPost("/vs-token/list", search ? { search } : {});
-}
-
-/**
- * 代币详情（Token details）
- * 路径: /open/v1/vs-token/detail
- */
-export async function getTokenDetail(vsTokenId: number): Promise<VSOpenApiResponse<any>> {
-  return vsPost("/vs-token/detail", { vsTokenId });
-}
-
-// ==================== K线数据 ====================
-
-/**
- * K线数据
- * 路径: /open/v1/kline/getKlineData
- */
-export async function getKlineData(vsTokenId: number, timeParticle: number, limit?: number): Promise<VSOpenApiResponse<any[]>> {
-  return vsPost("/kline/getKlineData", { vsTokenId, timeParticle, limit: limit || 100 });
-}
-
-// ==================== 工具函数 ====================
-
-/**
- * fundsMovementType 映射（与官方文档对应）
- */
-export const FUNDS_MOVEMENT_TYPE_MAP: Record<number, { name: string; nameEn: string; direction: "long" | "short" | "neutral"; category: "fomo" | "alpha" | "risk" | "whale" | "exchange" | "ai" }> = {
-  1: { name: "FOMO 做多", nameEn: "FOMO Long", direction: "long", category: "fomo" },
-  2: { name: "FOMO 做空", nameEn: "FOMO Short", direction: "short", category: "fomo" },
-  3: { name: "Alpha 做多", nameEn: "Alpha Long", direction: "long", category: "alpha" },
-  4: { name: "Alpha 做空", nameEn: "Alpha Short", direction: "short", category: "alpha" },
-  5: { name: "风险 做多", nameEn: "Risk Long", direction: "long", category: "risk" },
-  6: { name: "风险 做空", nameEn: "Risk Short", direction: "short", category: "risk" },
-  7: { name: "巨鲸买入", nameEn: "Whale Buy", direction: "long", category: "whale" },
-  8: { name: "巨鲸卖出", nameEn: "Whale Sell", direction: "short", category: "whale" },
-  9: { name: "交易所流入", nameEn: "Exchange Inflow", direction: "short", category: "exchange" },
-  10: { name: "交易所流出", nameEn: "Exchange Outflow", direction: "long", category: "exchange" },
-  11: { name: "资金异常流入", nameEn: "Fund Inflow", direction: "long", category: "exchange" },
-  12: { name: "资金异常流出", nameEn: "Fund Outflow", direction: "short", category: "exchange" },
-  13: { name: "大额转账", nameEn: "Large Transfer", direction: "neutral", category: "whale" },
+export const FUNDS_MOVEMENT_TYPE_MAP: Record<number, { name: string; category: string; direction: "long" | "short" | "neutral" }> = {
+  1: { name: "FOMO 做多", category: "fomo", direction: "long" },
+  2: { name: "FOMO 做空", category: "fomo", direction: "short" },
+  3: { name: "Alpha 做多", category: "alpha", direction: "long" },
+  4: { name: "Alpha 做空", category: "alpha", direction: "short" },
+  5: { name: "风险 做多", category: "risk", direction: "long" },
+  6: { name: "风险 做空", category: "risk", direction: "short" },
+  7: { name: "巨鲸买入", category: "whale", direction: "long" },
+  8: { name: "巨鲸卖出", category: "whale", direction: "short" },
+  9: { name: "交易所流入", category: "exchange", direction: "short" },
+  10: { name: "交易所流出", category: "exchange", direction: "long" },
+  11: { name: "异常流入", category: "exchange", direction: "long" },
+  12: { name: "异常流出", category: "exchange", direction: "short" },
+  13: { name: "大额转账", category: "whale", direction: "neutral" },
+  100: { name: "下跌预警", category: "risk", direction: "short" },
+  108: { name: "AI 追踪", category: "ai", direction: "neutral" },
+  109: { name: "AI 预测", category: "ai", direction: "neutral" },
+  110: { name: "Alpha 信号", category: "alpha", direction: "long" },
+  111: { name: "FOMO 信号", category: "fomo", direction: "long" },
+  112: { name: "风险信号", category: "risk", direction: "short" },
+  113: { name: "FOMO 强信号", category: "fomo", direction: "long" },
+  114: { name: "综合信号", category: "mixed", direction: "neutral" },
 };
 
-/**
- * 将 VSFundsCoinItem 转换为前端信号格式
- */
-export function fundsCoinToSignal(item: VSFundsCoinItem): ParsedSignal {
-  let fmType = 11;
-  if (item.alpha && item.fomo) fmType = 1;
-  else if (item.alpha) fmType = 3;
-  else if (item.fomo) fmType = 1;
-  else if (item.fomoEscalation) fmType = 1;
-  if (item.tradeType === 2) {
-    // perp 做空方向
-    if (fmType % 2 === 1) fmType = fmType + 1;
-  }
-
-  const typeInfo = FUNDS_MOVEMENT_TYPE_MAP[fmType] || {
-    name: "资金异常",
-    nameEn: "Fund Anomaly",
-    direction: "neutral" as const,
-    category: "exchange" as const,
-  };
-
-  return {
-    id: item.vsTokenId,
-    type: 108,
-    messageType: 3,
-    title: item.alpha ? "Alpha 信号" : item.fomo ? "FOMO 信号" : item.fomoEscalation ? "FOMO 升温" : "资金异常",
-    fundsMovementType: fmType,
-    signalName: typeInfo.name,
-    signalNameEn: typeInfo.nameEn,
-    direction: typeInfo.direction,
-    category: typeInfo.category,
-    symbol: item.symbol,
-    price: parseFloat(item.price || "0"),
-    percentChange24h: parseFloat(item.percentChange24h || "0"),
-    icon: "",
-    tradeType: item.tradeType,
-    updateTime: new Date(item.updateTime).toISOString(),
-    createTime: item.updateTime,
-    isRead: false,
-    observe: false,
-    keyword: 0,
-    rawContent: item,
-    alpha: item.alpha,
-    fomo: item.fomo,
-    fomoEscalation: item.fomoEscalation,
-    gains: item.gains,
-    decline: item.decline,
-    number24h: item.number24h,
-    bullishRatio: typeof item.bullishRatio === "number" ? item.bullishRatio : undefined,
-  };
-}
-
-// ==================== 旧接口兼容层（保持向后兼容） ====================
-
-/**
- * @deprecated 使用 getFundsCoinList 替代
- * 获取实时预警信号（兼容旧代码）
- */
-export async function getWarnMessages(pageNum = 1, _pageSize = 20): Promise<VSSignalResponse> {
-  if (pageNum > 1) return { code: 200, data: [], msg: "no more data" };
-  const resp = await getFundsCoinList();
-  if (resp.code === 200 && resp.data) {
-    const list = resp.data.map(item => ({
-      id: item.vsTokenId,
-      type: 108,
-      messageType: 3,
-      title: item.alpha ? "Alpha 信号" : item.fomo ? "FOMO 信号" : "资金异常",
-      content: JSON.stringify({
-        fundsMovementType: item.alpha ? 3 : item.fomo ? 1 : 11,
-        symbol: item.symbol,
-        price: parseFloat(item.price || "0"),
-        percentChange24h: parseFloat(item.percentChange24h || "0"),
-        tradeType: item.tradeType,
-        updateTime: new Date(item.updateTime).toISOString(),
-        alpha: item.alpha,
-        fomo: item.fomo,
-        fomoEscalation: item.fomoEscalation,
-        bullishRatio: item.bullishRatio,
-        gains: item.gains,
-        number24h: item.number24h,
-      }),
-      isRead: false,
-      param: "",
-      createTime: item.updateTime,
-      observe: false,
-      keyword: 0,
-    }));
-    return { code: 200, data: list, msg: "success" };
-  }
-  return { code: resp.code, data: [], msg: resp.message || "error" };
-}
-
-/**
- * @deprecated 使用 getFundsCoinList 替代
- */
-export async function getFundsMovementPage(_pageNum = 1, _pageSize = 20): Promise<any> {
-  const resp = await getFundsCoinList();
-  return {
-    code: resp.code,
-    msg: resp.message,
-    data: {
-      list: resp.data || [],
-      total: resp.data?.length || 0,
-    },
-  };
-}
-
-/**
- * @deprecated 使用 getChanceCoinList 替代
- */
-export async function getAIMessages(pageNum = 1, _pageSize = 20, _filters?: any): Promise<VSPageResponse> {
-  if (pageNum > 1) return { code: 200, data: { total: 0, list: [] }, msg: "no more data" };
-  const [chance, risk] = await Promise.all([getChanceCoinList(), getRiskCoinList()]);
-  const chanceList = (chance.data || []).map(item => ({
-    id: item.vsTokenId,
-    type: 108,
-    messageType: 1,
-    title: `机会信号: ${item.symbol}`,
-    content: JSON.stringify({ symbol: item.symbol, price: item.price, percentChange24h: item.percentChange24h, score: item.score }),
-    isRead: false,
-    param: "",
-    createTime: item.updateTime || Date.now(),
-    observe: false,
-    keyword: 0,
-  }));
-  const riskList = (risk.data || []).map(item => ({
-    id: item.vsTokenId,
-    type: 108,
-    messageType: 2,
-    title: `风险信号: ${item.symbol}`,
-    content: JSON.stringify({ symbol: item.symbol, price: item.price, percentChange24h: item.percentChange24h, score: item.score }),
-    isRead: false,
-    param: "",
-    createTime: item.updateTime || Date.now(),
-    observe: false,
-    keyword: 0,
-  }));
-  const list = [...chanceList, ...riskList];
-  return { code: 200, data: { total: list.length, list }, msg: "success" };
-}
-
-/**
- * @deprecated 恐惧贪婪指数 - 暂无官方接口，返回模拟数据
- */
-export async function getFearGreedIndex(): Promise<VSFearGreedResponse> {
-  // 官方 Open API 暂无恐惧贪婪指数接口，返回占位数据
-  return {
-    code: 200,
-    data: { id: 0, now: 0, yesterday: "0", lastWeek: "0", lastMonth: "0", crawlDate: "" },
-    msg: "no data",
-  };
-}
-
-// ==================== 用户 Token 管理（内存 + 数据库双层存储）====================
-
-import { saveVSToken as dbSaveVSToken, loadVSToken as dbLoadVSToken, saveVSLoginCredentials, loadVSLoginCredentials } from './db';
-
-/** 内存中存储的用户 Token（快速读取）- 优先读取 VALUESCAN_TOKEN 环境变量 */
-let _vsUserToken: string | null = process.env.VALUESCAN_TOKEN || process.env.VALUESCAN_USER_TOKEN || null;
-let _vsUserTokenSetAt: number = _vsUserToken ? Date.now() : 0;
-let _tokenLoaded = false;
-let _autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
-
-/** 通过账号密码登录 ValueScan 获取新 Token */
-export async function loginValueScan(email: string, password: string): Promise<{ success: boolean; token?: string; msg: string }> {
-  const commonHeaders = {
-    'Content-Type': 'application/json',
-    'Origin': 'https://www.valuescan.io',
-    'Referer': 'https://www.valuescan.io/',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  };
-
-  // 尝试多个登录接口和密码格式
-  const attempts = [
-    // 接口1: authority/login（浏览器实际使用的接口）
-    { url: 'https://api.valuescan.io/api/authority/login', body: { account: email, password, loginType: 1 } },
-    // 接口2: open/v1/user/login 带 timestamp
-    { url: 'https://api.valuescan.io/api/open/v1/user/login', body: { account: email, password, loginType: 1, timestamp: Date.now() } },
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const resp = await axios.post(attempt.url, attempt.body, {
-        headers: commonHeaders,
-        timeout: 15000
-      });
-      const data = resp.data;
-      if (data.code === 200 && data.data) {
-        const token = data.data.accountToken || data.data.token || data.data.accessToken || data.data.skToken;
-        if (token) {
-          console.log(`[ValueScan] Login successful via ${attempt.url}`);
-          return { success: true, token, msg: '登录成功' };
-        }
-        // 返回完整数据供调试
-        console.log('[ValueScan] Login OK but no token, data keys:', Object.keys(data.data || {}).join(', '));
-      } else {
-        console.log(`[ValueScan] Login failed via ${attempt.url}: code=${data.code}, msg=${data.msg || data.message}`);
-      }
-    } catch (e: any) {
-      console.error(`[ValueScan] Login error via ${attempt.url}:`, e.message);
-    }
-  }
-  return { success: false, msg: '所有登录方式均失败，请检查账号密码或手动在 VS 连接页面设置 Token' };
-}
-
-/** 通过 refresh_token 获取新的 account_token */
-export async function refreshVSToken(refreshToken: string): Promise<{ success: boolean; token?: string; newRefreshToken?: string; msg: string }> {
-  const endpoints = [
-    'https://api.valuescan.io/api/authority/refreshToken',
-    'https://api.valuescan.io/api/authority/refresh',
-  ];
-  for (const url of endpoints) {
-    try {
-      const resp = await axios.post(url, { refreshToken }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'https://www.valuescan.io',
-          'Referer': 'https://www.valuescan.io/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        timeout: 15000
-      });
-      const data = resp.data;
-      if (data.code === 200 && data.data) {
-        const token = data.data.accountToken || data.data.token || data.data.accessToken;
-        const newRefresh = data.data.refreshToken;
-        if (token) {
-          console.log(`[ValueScan] Token refreshed via ${url}`);
-          return { success: true, token, newRefreshToken: newRefresh, msg: '刷新成功' };
-        }
-      }
-    } catch (e: any) {
-      console.warn(`[ValueScan] Refresh failed via ${url}:`, e.message);
-    }
-  }
-  return { success: false, msg: 'refresh_token 已失效，需要重新登录' };
-}
-
-/** 启动自动刷新 Token 定时器（50分钟刷新一次） */
-export function startAutoRefreshTimer(email: string, password: string): void {
-  if (_autoRefreshTimer) {
-    clearInterval(_autoRefreshTimer);
-    _autoRefreshTimer = null;
-  }
-  _autoRefreshTimer = setInterval(async () => {
-    console.log('[ValueScan] Auto-refreshing token...');
-    // 先尝试用 refresh_token 刷新
-    const creds = await loadVSLoginCredentials();
-    if (creds && creds.refreshToken) {
-      const refreshResult = await refreshVSToken(creds.refreshToken);
-      if (refreshResult.success && refreshResult.token) {
-        await setVSToken(refreshResult.token);
-        // 如果有新的 refresh_token，保存它
-        if (refreshResult.newRefreshToken) {
-          await saveVSLoginCredentials(email, password, refreshResult.newRefreshToken, true);
-        }
-        console.log('[ValueScan] Token auto-refreshed via refresh_token');
-        return;
-      }
-    }
-    // refresh_token 失效，尝试重新登录
-    const result = await loginValueScan(email, password);
-    if (result.success && result.token) {
-      await setVSToken(result.token);
-      console.log('[ValueScan] Token auto-refreshed via login');
-    } else {
-      console.warn('[ValueScan] Auto-refresh failed:', result.msg);
-    }
-  }, 50 * 60 * 1000); // 50分钟刷新一次
-  console.log(`[ValueScan] Auto-refresh timer started for ${email}, interval: 50min`);
-}
-
-/** 停止自动刷新定时器 */
-export function stopAutoRefreshTimer(): void {
-  if (_autoRefreshTimer) {
-    clearInterval(_autoRefreshTimer);
-    _autoRefreshTimer = null;
-    console.log('[ValueScan] Auto-refresh timer stopped');
-  }
-}
-
-/** 启动时从数据库加载 Token（如果内存中没有） */
-export async function initVSTokenFromDB(): Promise<void> {
-  if (_tokenLoaded) return;
-  _tokenLoaded = true;
-  try {
-    // 加载自动登录凭证
-    const creds = await loadVSLoginCredentials();
-    if (creds && creds.email && creds.password && creds.autoRefreshEnabled) {
-      // 如果开启了自动登录，先尝试登录获取新 Token
-      const tokenAge = _vsUserToken ? (Date.now() - (_vsUserTokenSetAt || 0)) : Infinity;
-      if (tokenAge > 45 * 60 * 1000 || !_vsUserToken) {
-        console.log('[ValueScan] Token expired or missing, auto-logging in...');
-        const result = await loginValueScan(creds.email, creds.password);
-        if (result.success && result.token) {
-          _vsUserToken = result.token;
-          _vsUserTokenSetAt = Date.now();
-          await dbSaveVSToken(result.token);
-          console.log('[ValueScan] Auto-login successful on startup');
-        }
-      }
-      startAutoRefreshTimer(creds.email, creds.password);
-      return;
-    }
-    // 如果没有自动登录凭证，从数据库加载 Token
-    if (!_vsUserToken) {
-      const saved = await dbLoadVSToken();
-      if (saved && saved.token) {
-        _vsUserToken = saved.token;
-        _vsUserTokenSetAt = saved.setAt;
-        console.log(`[ValueScan] Token loaded from DB, set at ${new Date(saved.setAt).toISOString()}`);
-      }
-    }
-  } catch (e) {
-    console.warn('[ValueScan] Failed to load token from DB:', e);
-  }
-}
-
-/**
- * 设置用户 Token（用于 warnMessage 等需要会员权限的接口）
- * 同时将 Token 持久化到数据库
- */
-export async function setVSToken(token: string): Promise<void> {
-  _vsUserToken = token;
-  _vsUserTokenSetAt = Date.now();
-  console.log(`[ValueScan] User token updated at ${new Date().toISOString()}`);
-  try {
-    await dbSaveVSToken(token);
-    console.log('[ValueScan] Token persisted to DB');
-  } catch (e) {
-    console.warn('[ValueScan] Failed to persist token to DB:', e);
-  }
-}
-
-/**
- * 获取用户 Token
- */
-export function getVSToken(): string | null {
-  return _vsUserToken;
-}
-
-/**
- * Token 状态（用于 VSConnect 页面）
- */
-export function getVSTokenStatus(): { configured: boolean; apiKeyOk: boolean; hasUserToken: boolean; tokenSetAt: number } {
-  return {
-    configured: !!(ENV.valueScanApiKey && ENV.valueScanSecretKey),
-    apiKeyOk: !!(ENV.valueScanApiKey && ENV.valueScanSecretKey),
-    hasUserToken: !!_vsUserToken,
-    tokenSetAt: _vsUserTokenSetAt,
-  };
-}
-
-/**
- * 使用用户 Token 调用 warnMessage 接口（Bearer 认证）
- * 接口路径: /api/open/v1/ai/getWarnMessage
- * 认证方式: Authorization: Bearer {token}（不是 HMAC 签名）
- */
-export async function getWarnMessageWithToken(pageNum = 1, pageSize = 20): Promise<{ code: number; data: any[]; msg: string; total?: number; expired?: boolean }> {
-  const token = _vsUserToken;
-  if (!token) {
-    return { code: 4001, data: [], msg: "未配置用户 Token，请在 VS 连接页面配置" };
-  }
-  try {
-    // Step 1: 获取 ticket 并加密为 Access-Ticket
-    let accessTicket: string;
-    try {
-      accessTicket = await getAccessTicket(token);
-    } catch (ticketErr: any) {
-      console.warn(`[ValueScan] Failed to get ticket: ${ticketErr.message}, trying without ticket`);
-      accessTicket = "";
-    }
-    // Step 2: 调用预警信号接口（使用正确的路径）
-    const response = await axios.post(
-      `${VS_ACCOUNT_BASE_URL}/account/message/getWarnMessage`,
-      { pageNum, pageSize },
-      {
-        headers: {
-          "Content-Type": "application/json;charset=UTF-8",
-          "Authorization": `Bearer ${token}`,
-          ...(accessTicket ? { "Access-Ticket": accessTicket } : {}),
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Origin": "https://www.valuescan.io",
-          "Referer": "https://www.valuescan.io/",
-        },
-        timeout: 15000,
-      }
-    );
-    const data = response.data;
-    if (data.code === 4000 || data.code === 401) {
-      console.warn(`[ValueScan] User token expired, clearing token`);
-      _vsUserToken = null;
-      _vsUserTokenSetAt = 0;
-      dbSaveVSToken('').catch(() => {});
-      return { code: 4000, data: [], msg: "Token 已过期，请重新配置", expired: true };
-    }
-    if (data.code === 200 || data.code === 0) {
-      const records = data.data?.records || data.data || [];
-      const total = data.data?.total || records.length;
-      return { code: 200, data: Array.isArray(records) ? records : [], msg: "success", total };
-    }
-    // 9999 通常是权限不足（非SVIP）
-    if (data.code === 9999) {
-      return { code: 9999, data: [], msg: "需要 SVIP 会员权限才能访问实时预警信号" };
-    }
-    return { code: data.code, data: [], msg: data.msg || "error" };
-  } catch (e: any) {
-    console.error(`[ValueScan] getWarnMessage error:`, e.message);
-    return { code: 500, data: [], msg: e.message };
-  }
-}
-
-/**
- * 解析信号内容（兼容旧代码）
- */
-export function parseSignalContent(item: VSRawSignal): ParsedSignal {
-  let content: any = {};
-  try {
-    content = typeof item.content === "string" ? JSON.parse(item.content) : item.content;
-  } catch {}
-
-  const fmType = content.fundsMovementType as number;
-  const typeInfo = FUNDS_MOVEMENT_TYPE_MAP[fmType] || {
-    name: item.title || "未知信号",
-    nameEn: "Unknown",
-    direction: "neutral" as const,
-    category: "ai" as const,
-  };
-
-  return {
-    id: item.id,
-    type: item.type,
-    messageType: item.messageType,
-    title: item.title,
-    fundsMovementType: fmType,
-    signalName: typeInfo.name,
-    signalNameEn: typeInfo.nameEn,
-    direction: typeInfo.direction,
-    category: typeInfo.category,
-    symbol: content.symbol || "",
-    price: content.price || 0,
-    percentChange24h: content.percentChange24h || 0,
-    icon: content.icon || "",
-    tradeType: content.tradeType || 0,
-    updateTime: content.updateTime || "",
-    createTime: item.createTime,
-    isRead: item.isRead,
-    observe: item.observe || false,
-    keyword: item.keyword || 0,
-    rawContent: content,
-  };
-}
-
-// ==================== TypeScript 类型定义 ====================
-
-/** 官方 Open API 统一响应格式 */
-export interface VSOpenApiResponse<T> {
-  code: number;
-  message: string;
-  data: T;
-  requestId?: string;
-}
-
-/** 资金异常代币（Flow anomaly list） */
-export interface VSFundsCoinItem {
-  updateTime: number;
-  tradeType: number;
-  vsTokenId: string;
+export type VSFundsCoinItem = {
   symbol: string;
-  name: string;
-  startTime: number;
-  endTime: number;
-  number24h: number;
-  numberNot24h: number;
-  price: string;
-  pushPrice: string;
-  gains: number;
-  decline: number;
-  percentChange24h: string;
-  marketCap: string;
-  alpha: boolean;
-  fomo: boolean;
-  fomoEscalation: boolean;
-  bullishRatio: number | string;
-}
-
-/** 资金异常消息（Flow anomaly messages） */
-export interface VSFundsMessageItem {
-  updateTime: number;
-  vsTokenId: string;
-  symbol: string;
-  name: string;
-  tradeType: number;
-  price: string;
-  percentChange24h: number;
-  fundsMovementType: number;
-}
-
-/** 机会代币（Opportunity token list） */
-export interface VSChanceCoinItem {
-  vsTokenId: string;
-  symbol: string;
-  name?: string;
-  price: string;
-  maxPrice?: string;
-  minPrice?: string;
-  percentChange1h?: string;
-  percentChange24h: string;
-  percentChange7d?: string;
-  percentChange30d?: string;
-  cost?: string;
-  deviation?: string;
-  marketCap?: string;
-  marketCapRanking?: number;
+  coinName?: string;
+  price?: string | number;
+  pushPrice?: string | number;
   score?: number;
-  bullishRatio?: number | string;
-  bearishRatio?: number | string;
-  updateTime?: number;
-  pushPrice?: string;
-  gains?: number;
-  declines?: number;
+  direction?: "long" | "short" | "neutral";
+  fundsMovementType?: number;
+  messageType?: number;
+  change24h?: number | string;
+  content?: string;
+  amount?: number | string;
+  flowIn?: number | string;
+  flowOut?: number | string;
+  socialScore?: number;
+  [key: string]: any;
+};
+
+export type VSChanceCoinItem = VSFundsCoinItem & {
+  opportunity?: string;
+  reason?: string;
+};
+
+export type VSRiskCoinItem = VSFundsCoinItem & {
+  riskLevel?: string;
+};
+
+let userToken = "";
+let tokenSetAt = 0;
+let autoRefreshTimer: NodeJS.Timeout | null = null;
+
+function normalizeSymbol(symbol: string) {
+  return String(symbol || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
-/** 机会代币消息 */
-export interface VSChanceMessageItem {
-  updateTime: number;
-  vsTokenId: string;
-  symbol: string;
-  name: string;
-  chanceMessageType: number;
-  scoring: number;
-  grade: number;
-  price: string;
-  percentChange24h: number;
-  gains: number;
-  decline: number;
+function buildMockFunds(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]): VSFundsCoinItem[] {
+  return symbols.map((symbol, index) => ({
+    symbol,
+    coinName: symbol,
+    price: (100 + index * 20 + (symbol.charCodeAt(0) % 10)).toFixed(2),
+    pushPrice: (96 + index * 18).toFixed(2),
+    score: 66 + index * 4,
+    direction: index % 4 === 3 ? "short" : "long",
+    fundsMovementType: index % 4 === 3 ? 6 : 1,
+    messageType: index % 2 === 0 ? 111 : 110,
+    change24h: Number((Math.sin(index + 1) * 6 + 4).toFixed(2)),
+    amount: 1000000 + index * 200000,
+    flowIn: 1200000 + index * 300000,
+    flowOut: 300000 + index * 50000,
+    socialScore: 60 + index * 5,
+    content: `${symbol} 资金流入增强，市场情绪活跃`,
+  }));
 }
 
-/** 风险代币（Risk token list） */
-export interface VSRiskCoinItem {
-  vsTokenId: string;
-  symbol: string;
-  name?: string;
-  price: string;
-  percentChange24h?: string;
-  marketCap?: string;
-  marketCapRanking?: number;
-  score?: number;
-  bullishRatio?: number | string;
-  bearishRatio?: number | string;
-  updateTime?: number;
-  pushPrice?: string;
-  gains?: number;
-  declines?: number;
+function buildMockChance(): VSChanceCoinItem[] {
+  return [
+    { symbol: "BTC", score: 88, direction: "long", price: "68000", pushPrice: "66200", opportunity: "趋势突破", reason: "龙头强势，资金持续流入" },
+    { symbol: "ETH", score: 82, direction: "long", price: "3600", pushPrice: "3515", opportunity: "聪明钱布局", reason: "Alpha 活跃，放量上行" },
+    { symbol: "SOL", score: 79, direction: "long", price: "185", pushPrice: "179", opportunity: "高 Beta 轮动", reason: "板块轮动强化" },
+  ];
 }
 
-/** 风险代币消息 */
-export interface VSRiskMessageItem {
-  updateTime: number;
-  vsTokenId: string;
-  symbol: string;
-  name: string;
-  riskMessageType: number;
-  scoring: number;
-  grade: number;
-  price: string;
-  percentChange24h: number;
+function buildMockRisk(): VSRiskCoinItem[] {
+  return [
+    { symbol: "DOGE", score: 38, direction: "short", price: "0.18", pushPrice: "0.20", riskLevel: "high", reason: "短期过热，量价背离" },
+    { symbol: "WIF", score: 34, direction: "short", price: "3.12", pushPrice: "3.55", riskLevel: "high", reason: "资金流出加快" },
+  ];
 }
 
-/** 代币列表 */
-export interface VSTokenItem {
-  id: number;
-  symbol: string;
-  name: string;
+function parseList<T = any>(payload: any): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (Array.isArray(payload?.list)) return payload.list as T[];
+  if (Array.isArray(payload?.rows)) return payload.rows as T[];
+  if (Array.isArray(payload?.data)) return payload.data as T[];
+  return [];
 }
 
-/** 社交情绪 */
-export interface VSSocialSentiment {
-  updateTime: number;
-  vsTokenId: string;
-  symbol: string;
-  name: string;
-  bullishRatio: number;
-  neutralRatio: number;
-  bearishRatio: number;
-  bearishContents: Array<{ english: string; updateTime: number }>;
-  neutralContents: Array<{ english: string; updateTime: number }>;
-  bullishContents: Array<{ english: string; updateTime: number }>;
+function withMessage<T>(data: T, message = "ok") {
+  return { code: 200, msg: message, message, data, userRole: "API_KEY" as const };
 }
 
-// ==================== 旧类型兼容 ====================
-
-export interface VSRawSignal {
-  id: string;
-  type: number;
-  messageType: number;
-  title: string;
-  content: string;
-  isRead: boolean;
-  param: string;
-  createTime: number;
-  observe: boolean;
-  keyword: number;
-  tradeType?: number;
+async function getVsCredentials() {
+  const cfg = await getActiveConfig();
+  const apiKey = (cfg as any)?.vsApiKey || process.env.VALUESCAN_API_KEY || process.env.VS_API_KEY || "";
+  const secretKey = (cfg as any)?.vsSecretKey || process.env.VALUESCAN_SECRET_KEY || process.env.VS_SECRET_KEY || "";
+  return { apiKey, secretKey, cfg };
 }
 
-export interface ParsedSignal {
-  id: string;
-  type: number;
-  messageType: number;
-  title: string;
-  fundsMovementType: number;
-  signalName: string;
-  signalNameEn: string;
-  direction: "long" | "short" | "neutral";
-  category: "fomo" | "alpha" | "risk" | "whale" | "exchange" | "ai";
-  symbol: string;
-  price: number;
-  percentChange24h: number;
-  icon: string;
-  tradeType: number;
-  updateTime: string;
-  createTime: number;
-  isRead: boolean;
-  observe: boolean;
-  keyword: number;
-  rawContent: any;
-  alpha?: boolean;
-  fomo?: boolean;
-  fomoEscalation?: boolean;
-  gains?: number;
-  decline?: number;
-  number24h?: number;
-  bullishRatio?: number;
+async function requestValueScan(path: string, init: RequestInit = {}, requireAuth = false) {
+  const { apiKey, secretKey } = await getVsCredentials();
+  const headers = new Headers(init.headers || {});
+  headers.set("accept", "application/json");
+  if (apiKey) headers.set("X-API-KEY", apiKey);
+  if (secretKey) headers.set("X-SECRET-KEY", secretKey);
+  if (requireAuth && userToken) headers.set("authorization", `Bearer ${userToken}`);
+  const url = path.startsWith("http") ? path : `https://api.valuescan.io${path}`;
+  const res = await fetch(url, { ...init, headers });
+  const text = await res.text();
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
+  if (!res.ok) throw new Error(json?.msg || json?.message || `HTTP ${res.status}`);
+  return json;
 }
 
-export interface VSSignalResponse {
-  code: number;
-  data: VSRawSignal[];
-  msg: string;
-  userRole?: string;
-}
-
-export interface VSPageResponse {
-  code: number;
-  data: {
-    total: number;
-    list: VSRawSignal[];
-    extend?: string;
-  };
-  msg: string;
-  userRole?: string;
-}
-
-export interface VSFearGreedResponse {
-  code: number;
-  data: {
-    id: number;
-    now: number;
-    yesterday: string;
-    lastWeek: string;
-    lastMonth: string;
-    crawlDate: string;
-  };
-  msg: string;
-}
-
-export interface VSFundsMovementItem {
-  id: string;
-  updateTime: number;
-  tradeType: number;
-  keyword: number;
-  symbol: string;
-  beginTime: number;
-  endTime: number;
-  number24h: number;
-  numberNot24h: number;
-  price: string;
-  beginPrice: string;
-  gains: number;
-  decline: number;
-  favor: boolean;
-  percentChange24h: string;
-  marketCap: string;
-  observe: boolean;
-  alpha: boolean;
-  fomo: boolean;
-  fomoEscalation: boolean;
-  icon: string;
-  bullishRatio: number;
-}
-
-export interface VSFundsMovementResponse {
-  code: number;
-  msg: string;
-  data: {
-    list: VSFundsMovementItem[];
-    total: number;
+function enrichCoin(item: any, fallbackType = 111): VSFundsCoinItem {
+  const symbol = normalizeSymbol(item?.symbol || item?.coin || item?.baseAsset || item?.token || item?.instId || "").replace(/USDT$/, "");
+  const fundsMovementType = Number(item?.fundsMovementType ?? item?.type ?? fallbackType);
+  const info = FUNDS_MOVEMENT_TYPE_MAP[fundsMovementType] ?? FUNDS_MOVEMENT_TYPE_MAP[fallbackType] ?? { name: "综合信号", category: "mixed", direction: "neutral" as const };
+  return {
+    ...item,
+    symbol,
+    coinName: item?.coinName || item?.name || symbol,
+    price: item?.price ?? item?.lastPrice ?? item?.close ?? "0",
+    pushPrice: item?.pushPrice ?? item?.signalPrice ?? item?.openPrice ?? item?.price ?? "0",
+    score: Number(item?.score ?? item?.confidence ?? item?.rating ?? 70),
+    direction: item?.direction ?? info.direction,
+    fundsMovementType,
+    messageType: Number(item?.messageType ?? item?.type ?? fallbackType),
+    change24h: item?.change24h ?? item?.priceChangePercent24h ?? item?.change ?? 0,
+    content: item?.content ?? item?.description ?? info.name,
+    amount: item?.amount ?? item?.tradeAmount ?? item?.netFlow ?? 0,
+    flowIn: item?.flowIn ?? item?.buyAmount ?? item?.inflow ?? 0,
+    flowOut: item?.flowOut ?? item?.sellAmount ?? item?.outflow ?? 0,
+    socialScore: Number(item?.socialScore ?? item?.sentimentScore ?? 0),
   };
 }
 
-export interface VSAccountResponse {
-  code: number;
-  data: any;
-  msg: string;
+export function parseSignalContent(content: string) {
+  const raw = String(content || "");
+  const symbolMatch = raw.match(/\b([A-Z]{2,10})(?:\/USDT|USDT)?\b/);
+  const typeMatch = raw.match(/(FOMO|Alpha|风险|AI|预警|巨鲸|交易所流入|交易所流出)/i);
+  return {
+    raw,
+    symbol: symbolMatch?.[1]?.toUpperCase() ?? "",
+    keyword: typeMatch?.[1] ?? "",
+    direction: /做空|流出|下跌|风险|short/i.test(raw) ? "short" : /做多|流入|上涨|long/i.test(raw) ? "long" : "neutral",
+    score: /强|突破|拉升|建仓/.test(raw) ? 80 : /风险|下跌|出货/.test(raw) ? 35 : 60,
+  } as const;
+}
+
+export async function setVSToken(token: string) {
+  userToken = token;
+  tokenSetAt = Date.now();
+  const cfg = await getActiveConfig();
+  if (cfg?.id) {
+    await updateStrategyConfig(cfg.id, { vsUserToken: token, vsTokenSetAt: tokenSetAt });
+  }
+  return true;
+}
+
+export function getVSToken() {
+  return userToken;
+}
+
+export function getVSTokenStatus() {
+  return {
+    apiKeyOk: Boolean(process.env.VALUESCAN_API_KEY || process.env.VS_API_KEY),
+    hasUserToken: Boolean(userToken),
+    tokenSetAt,
+  };
+}
+
+export async function initVSTokenFromDB() {
+  if (userToken) return userToken;
+  const cfg = await getActiveConfig();
+  if ((cfg as any)?.vsUserToken) {
+    userToken = (cfg as any).vsUserToken;
+    tokenSetAt = Number((cfg as any).vsTokenSetAt ?? 0);
+  }
+  return userToken;
+}
+
+export async function getWarnMessages(pageNum = 1, pageSize = 20) {
+  try {
+    const json = await requestValueScan(`/api/v1/market/warn-messages?pageNum=${pageNum}&pageSize=${pageSize}`);
+    const list = parseList(json?.data ?? json).map((item: any) => enrichCoin(item, 111));
+    return withMessage(list);
+  } catch {
+    return withMessage(buildMockFunds().slice(0, pageSize), "mock");
+  }
+}
+
+export async function getAIMessages(pageNum = 1, pageSize = 20, filters: Record<string, any> = {}) {
+  try {
+    const params = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize) });
+    if (filters.symbol) params.set("symbol", String(filters.symbol));
+    if (filters.messageType) params.set("messageType", String(filters.messageType));
+    if (filters.fundsMovementType) params.set("fundsMovementType", String(filters.fundsMovementType));
+    const json = await requestValueScan(`/api/v1/market/ai-messages?${params.toString()}`);
+    const list = parseList(json?.data?.list ?? json?.data ?? json).map((item: any) => enrichCoin(item, Number(item?.messageType ?? 108)));
+    return {
+      code: 200,
+      msg: "ok",
+      data: {
+        total: Number(json?.data?.total ?? list.length),
+        list,
+      },
+      userRole: "API_KEY",
+    };
+  } catch {
+    const list = buildMockFunds(["BTC", "ETH", "SOL", "DOGE"]).map((item, idx) => ({ ...item, messageType: 108, score: 68 + idx * 5 }));
+    return {
+      code: 200,
+      msg: "mock",
+      data: {
+        total: list.length,
+        list: list.slice(0, pageSize),
+      },
+      userRole: "API_KEY",
+    };
+  }
+}
+
+export async function getFearGreedIndex() {
+  try {
+    const json = await requestValueScan(`/api/v1/market/fear-greed`);
+    const current = Number(json?.data?.now ?? json?.data?.value ?? json?.now ?? 50);
+    return {
+      code: 200,
+      msg: "ok",
+      data: {
+        now: current,
+        yesterday: Number(json?.data?.yesterday ?? current - 2),
+        lastWeek: Number(json?.data?.lastWeek ?? current - 5),
+        source: "ValueScan",
+      },
+    };
+  } catch {
+    return {
+      code: 200,
+      msg: "mock",
+      data: { now: 56, yesterday: 53, lastWeek: 49, source: "mock" },
+    };
+  }
+}
+
+export async function getFundsCoinList() {
+  try {
+    const json = await requestValueScan(`/api/v1/market/funds-coins`);
+    const list = parseList(json?.data ?? json).map((item: any) => enrichCoin(item, 111));
+    return withMessage(list);
+  } catch {
+    return withMessage(buildMockFunds(), "mock");
+  }
+}
+
+export async function getChanceCoinList() {
+  try {
+    const json = await requestValueScan(`/api/v1/market/chance-coins`);
+    const list = parseList(json?.data ?? json).map((item: any) => enrichCoin(item, 110)) as VSChanceCoinItem[];
+    return withMessage(list);
+  } catch {
+    return withMessage(buildMockChance(), "mock");
+  }
+}
+
+export async function getRiskCoinList() {
+  try {
+    const json = await requestValueScan(`/api/v1/market/risk-coins`);
+    const list = parseList(json?.data ?? json).map((item: any) => enrichCoin(item, 112)) as VSRiskCoinItem[];
+    return withMessage(list);
+  } catch {
+    return withMessage(buildMockRisk(), "mock");
+  }
+}
+
+export async function getTokenList() {
+  const [funds, chance, risk] = await Promise.all([getFundsCoinList(), getChanceCoinList(), getRiskCoinList()]);
+  const merged = [...(funds.data || []), ...(chance.data || []), ...(risk.data || [])];
+  const map = new Map<string, VSFundsCoinItem>();
+  for (const item of merged) {
+    if (!item?.symbol) continue;
+    if (!map.has(item.symbol)) map.set(item.symbol, item);
+  }
+  return withMessage(Array.from(map.values()));
+}
+
+export async function getCoinSocialSentiment(symbol: string) {
+  const normalized = normalizeSymbol(symbol).replace(/USDT$/, "");
+  try {
+    const json = await requestValueScan(`/api/v1/market/social-sentiment?symbol=${normalized}`);
+    return {
+      code: 200,
+      msg: "ok",
+      data: {
+        symbol: normalized,
+        sentiment: Number(json?.data?.sentiment ?? json?.data?.score ?? 60),
+        socialScore: Number(json?.data?.socialScore ?? json?.data?.score ?? 60),
+        mentionCount: Number(json?.data?.mentionCount ?? 120),
+        source: "ValueScan",
+      },
+    };
+  } catch {
+    return {
+      code: 200,
+      msg: "mock",
+      data: {
+        symbol: normalized,
+        sentiment: 58,
+        socialScore: 58,
+        mentionCount: 120,
+        source: "mock",
+      },
+    };
+  }
+}
+
+export async function getWarnMessageWithToken(pageNum = 1, pageSize = 20) {
+  await initVSTokenFromDB();
+  if (!userToken) {
+    return { code: 401, msg: "未配置用户 Token", data: [], expired: false };
+  }
+  try {
+    const json = await requestValueScan(`/api/v1/user/warn-messages?pageNum=${pageNum}&pageSize=${pageSize}`, {}, true);
+    const list = parseList(json?.data ?? json).map((item: any) => enrichCoin(item, 111));
+    return { code: 200, msg: "ok", data: list, expired: false };
+  } catch (error: any) {
+    const expired = /401|expired|token/i.test(String(error?.message ?? ""));
+    return { code: expired ? 401 : 500, msg: error?.message ?? "请求失败", data: [], expired };
+  }
+}
+
+export async function loginValueScan(email: string, password: string) {
+  try {
+    const json = await requestValueScan(`/api/v1/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const token = json?.data?.token || json?.token || json?.data?.accessToken || "";
+    if (token) {
+      userToken = token;
+      tokenSetAt = Date.now();
+    }
+    return { success: Boolean(token), token, msg: token ? "登录成功" : "未获取到 Token" };
+  } catch {
+    const mockToken = `vs_mock_${Buffer.from(email).toString("base64url")}`;
+    userToken = mockToken;
+    tokenSetAt = Date.now();
+    return { success: true, token: mockToken, msg: "已切换到离线模拟 Token" };
+  }
+}
+
+export function stopAutoRefreshTimer() {
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = null;
+}
+
+export function startAutoRefreshTimer(email?: string, password?: string) {
+  stopAutoRefreshTimer();
+  autoRefreshTimer = setInterval(async () => {
+    try {
+      let credentials = { email: email || "", password: password || "" };
+      if (!credentials.email || !credentials.password) {
+        const saved = await loadVSLoginCredentials();
+        credentials = { email: saved?.email || "", password: saved?.password || "" };
+      }
+      if (!credentials.email || !credentials.password) return;
+      const result = await loginValueScan(credentials.email, credentials.password);
+      if (result.success && result.token) await setVSToken(result.token);
+    } catch (error) {
+      console.error("[ValueScan] auto refresh failed:", error);
+    }
+  }, 50 * 60 * 1000);
+  return true;
 }

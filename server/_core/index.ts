@@ -93,15 +93,3 @@ setTimeout(async () => {
     console.error('[AutoStart] 每日报告定时任务启动失败:', e);
   }
 }, 5000);
-
-// 启动 ValueScan SSE 订阅（大盘解析 + 代币信号）
-setTimeout(async () => {
-  try {
-    const { startMarketAnalysisSSE, startTokenSignalSSE } = await import('../valueScanSSEService');
-    startMarketAnalysisSSE();
-    startTokenSignalSSE(); // 订阅全部代币信号
-    console.log('[AutoStart] ValueScan SSE 订阅已启动');
-  } catch (e) {
-    console.error('[AutoStart] ValueScan SSE 启动失败:', e);
-  }
-}, 7000);

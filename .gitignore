@@ -4,8 +4,6 @@
 
 # Build outputs
 dist/
-!dist/public/
-!dist/public/**
 build/
 *.dist
 
