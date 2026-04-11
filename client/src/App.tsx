@@ -26,6 +26,7 @@ import NewsSentiment from "@/pages/NewsSentiment";
 import SignalQuality from "@/pages/SignalQuality";
 import SignalQualityDashboard from "@/pages/SignalQualityDashboard";
 import Strategy from "@/pages/Strategy";
+import StrategyCenter from "@/pages/StrategyCenter";
 import Backtest from "@/pages/Backtest";
 import Trades from "@/pages/Trades";
 import Positions from "@/pages/Positions";
@@ -35,6 +36,8 @@ import LiveTrading from "@/pages/LiveTrading";
 import LiveConsole from "@/pages/LiveConsole";
 import VSConnect from "@/pages/VSConnect";
 import VSWinRate from "@/pages/VSWinRate";
+import Charts from "@/pages/Charts";
+import SettingsPage from "@/pages/Settings";
 import ComponentShowcase from "@/pages/ComponentShowcase";
 import SignalResonance from "@/pages/SignalResonance";
 import NotFound from "@/pages/NotFound";
@@ -55,34 +58,39 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
       { href: "/signal-resonance", label: "信号共振", icon: BrainCircuit },
     ],
   },
-  {
-    title: "市场面板",
-    items: [
-      { href: "/bull-bear", label: "多空面板", icon: TrendingUp },
-      { href: "/long-short", label: "多空比", icon: Gauge },
-      { href: "/whale-cost", label: "巨鲸成本", icon: Database },
-      { href: "/news", label: "资讯面板", icon: Newspaper },
-      { href: "/news-sentiment", label: "情绪分析", icon: ShieldCheck },
-      { href: "/signal-quality", label: "信号质量", icon: BarChart3 },
-      { href: "/signal-quality-dashboard", label: "质量仪表盘", icon: Command },
-    ],
-  },
-  {
-    title: "策略与交易",
-    items: [
-      { href: "/strategy", label: "策略中心", icon: Settings },
-      { href: "/backtest", label: "回测分析", icon: CandlestickChart },
-      { href: "/trades", label: "交易记录", icon: BarChart3 },
-      { href: "/positions", label: "持仓管理", icon: Database },
-      { href: "/paper-trading", label: "模拟交易", icon: ShieldCheck },
-      { href: "/quant-sim", label: "量化模拟", icon: Gauge },
-      { href: "/live-trading", label: "实盘交易", icon: TrendingUp },
-      { href: "/live-console", label: "实盘控制台", icon: Command },
-      { href: "/vs-connect", label: "VS 连接", icon: Waves },
-      { href: "/vs-win-rate", label: "胜率统计", icon: BarChart3 },
-      { href: "/showcase", label: "组件展示", icon: LayoutDashboard },
-    ],
-  },
+      {
+        title: "市场面板",
+        items: [
+          { href: "/bull-bear", label: "多空面板", icon: TrendingUp },
+          { href: "/long-short", label: "多空比", icon: Gauge },
+          { href: "/whale-cost", label: "巨鲸成本", icon: Database },
+          { href: "/charts", label: "图表行情", icon: CandlestickChart },
+          { href: "/news", label: "资讯面板", icon: Newspaper },
+          { href: "/news-sentiment", label: "情绪分析", icon: ShieldCheck },
+          { href: "/signal-quality", label: "信号质量", icon: BarChart3 },
+          { href: "/signal-quality-dashboard", label: "质量仪表盘", icon: Command },
+        ],
+      },
+
+      {
+        title: "策略与交易",
+        items: [
+          { href: "/strategy-center", label: "策略中心", icon: Settings },
+          { href: "/strategy", label: "策略工坊", icon: BrainCircuit },
+          { href: "/backtest", label: "回测分析", icon: CandlestickChart },
+          { href: "/trades", label: "交易记录", icon: BarChart3 },
+          { href: "/positions", label: "持仓管理", icon: Database },
+          { href: "/paper-trading", label: "模拟交易", icon: ShieldCheck },
+          { href: "/quant-sim", label: "量化模拟", icon: Gauge },
+          { href: "/live-trading", label: "实盘交易", icon: TrendingUp },
+          { href: "/live-console", label: "实盘控制台", icon: Command },
+          { href: "/vs-connect", label: "VS 连接", icon: Waves },
+          { href: "/vs-win-rate", label: "胜率统计", icon: BarChart3 },
+          { href: "/settings", label: "系统设置", icon: Settings },
+          { href: "/showcase", label: "组件展示", icon: LayoutDashboard },
+        ],
+      },
+
 ];
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -154,16 +162,19 @@ export default function App() {
           <Route path="/news-sentiment" component={NewsSentiment} />
           <Route path="/signal-quality" component={SignalQuality} />
           <Route path="/signal-quality-dashboard" component={SignalQualityDashboard} />
+          <Route path="/strategy-center" component={StrategyCenter} />
           <Route path="/strategy" component={Strategy} />
           <Route path="/backtest" component={Backtest} />
           <Route path="/trades" component={Trades} />
           <Route path="/positions" component={Positions} />
           <Route path="/paper-trading" component={PaperTrading} />
+          <Route path="/charts" component={Charts} />
           <Route path="/quant-sim" component={QuantSim} />
           <Route path="/live-trading" component={LiveTrading} />
           <Route path="/live-console" component={LiveConsole} />
           <Route path="/vs-connect" component={VSConnect} />
           <Route path="/vs-win-rate" component={VSWinRate} />
+          <Route path="/settings" component={SettingsPage} />
           <Route path="/showcase" component={ComponentShowcase} />
           <Route component={NotFound} />
         </Switch>

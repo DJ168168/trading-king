@@ -4,8 +4,13 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../server/routers";
 import { createContext } from "../server/_core/context";
 import { registerOAuthRoutes } from "../server/_core/oauth";
+import { bootstrapValueScanService } from "../server/valueScanService";
 import path from "path";
 import fs from "fs";
+
+void bootstrapValueScanService().catch((error) => {
+  console.error("[ValueScan] serverless bootstrap failed:", error);
+});
 
 const app = express();
 

@@ -1667,8 +1667,280 @@ async function checkRisk(symbol, positionValue) {
 }
 
 // server/valueScanSSEService.ts
+import https from "https";
+import { createHmac } from "crypto";
 init_schema();
 import { eq as eq2 } from "drizzle-orm";
+var STREAM_BASE = "https://stream.valuescan.ai";
+function buildSSEParams(extraParams = {}) {
+  const apiKey = ENV.valueScanApiKey;
+  const secretKey = ENV.valueScanSecretKey;
+  if (!apiKey || !secretKey) {
+    throw new Error("ValueScan API Key \u672A\u914D\u7F6E");
+  }
+  const ts = Date.now();
+  const nonce = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+  const sign = createHmac("sha256", secretKey).update(String(ts) + nonce).digest("hex");
+  const params = new URLSearchParams({
+    apiKey,
+    sign,
+    timestamp: String(ts),
+    nonce,
+    ...extraParams
+  });
+  return params.toString();
+}
+async function sendToTelegram(message) {
+  try {
+    const db2 = await getDb();
+    if (!db2) return;
+    const { telegramConfig: telegramConfig2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
+    const configs = await db2.select().from(telegramConfig2).limit(1);
+    const cfg = configs[0];
+    if (!cfg?.isActive || !cfg.botToken || !cfg.chatId) return;
+    const url = `https://api.telegram.org/bot${cfg.botToken}/sendMessage`;
+    const body = JSON.stringify({
+      chat_id: cfg.chatId,
+      text: message,
+      parse_mode: "HTML",
+      disable_web_page_preview: true
+    });
+    await new Promise((resolve, reject) => {
+      const req = https.request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }
+      }, (res) => {
+        res.resume();
+        resolve();
+      });
+      req.on("error", reject);
+      req.write(body);
+      req.end();
+    });
+  } catch {
+  }
+}
+function connectSSE(path2, queryString, onEvent, onError) {
+  let destroyed = false;
+  let retryCount = 0;
+  function connect() {
+    if (destroyed) return;
+    const url = `${STREAM_BASE}${path2}?${queryString}`;
+    const urlObj = new URL(url);
+    const req = https.request({
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: "GET",
+      headers: { Accept: "text/event-stream", "Cache-Control": "no-cache" },
+      timeout: 31e4
+      // 310s 超时（SSE 每20s心跳）
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        console.error(`[ValueScan SSE] ${path2} HTTP ${res.statusCode}`);
+        res.resume();
+        scheduleRetry();
+        return;
+      }
+      retryCount = 0;
+      let buffer = "";
+      let eventName = "";
+      res.on("data", (chunk) => {
+        buffer += chunk.toString("utf8");
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trimEnd();
+          if (trimmed.startsWith(":")) {
+          } else if (trimmed === "") {
+            eventName = "";
+          } else if (trimmed.startsWith("event:")) {
+            eventName = trimmed.slice(6).trim();
+          } else if (trimmed.startsWith("data:")) {
+            const data = trimmed.slice(5).trim();
+            if (eventName && data) {
+              try {
+                onEvent(eventName, data);
+              } catch (e) {
+                console.error("[ValueScan SSE] onEvent error:", e);
+              }
+            }
+          }
+        }
+      });
+      res.on("end", () => {
+        if (!destroyed) scheduleRetry();
+      });
+      res.on("error", (err) => {
+        if (!destroyed) {
+          console.error("[ValueScan SSE] response error:", err.message);
+          scheduleRetry();
+        }
+      });
+    });
+    req.on("error", (err) => {
+      if (!destroyed) {
+        console.error("[ValueScan SSE] request error:", err.message);
+        scheduleRetry();
+      }
+    });
+    req.on("timeout", () => {
+      req.destroy();
+    });
+    req.end();
+  }
+  function scheduleRetry() {
+    if (destroyed) return;
+    retryCount++;
+    const wait = Math.min(2 ** retryCount, 60) * 1e3;
+    console.log(`[ValueScan SSE] \u5C06\u5728 ${wait / 1e3}s \u540E\u91CD\u8FDE (\u7B2C${retryCount}\u6B21)...`);
+    setTimeout(() => {
+      if (!destroyed) {
+        try {
+          const newQs = queryString.includes("tokens") ? buildSSEParams({ tokens: new URLSearchParams(queryString).get("tokens") ?? "" }) : buildSSEParams();
+          queryString = newQs;
+        } catch {
+        }
+        connect();
+      }
+    }, wait);
+  }
+  connect();
+  return () => {
+    destroyed = true;
+  };
+}
+var marketSSEStop = null;
+function startMarketAnalysisSSE() {
+  if (marketSSEStop) return;
+  const apiKey = ENV.valueScanApiKey;
+  const secretKey = ENV.valueScanSecretKey;
+  if (!apiKey || !secretKey) {
+    console.warn("[ValueScan SSE] \u5927\u76D8\u5206\u6790\u8BA2\u9605\uFF1AAPI Key \u672A\u914D\u7F6E\uFF0C\u8DF3\u8FC7");
+    return;
+  }
+  console.log("[ValueScan SSE] \u542F\u52A8\u5927\u76D8\u5206\u6790\u8BA2\u9605...");
+  let qs;
+  try {
+    qs = buildSSEParams();
+  } catch (e) {
+    console.error("[ValueScan SSE] \u7B7E\u540D\u5931\u8D25:", e);
+    return;
+  }
+  marketSSEStop = connectSSE(
+    "/stream/market/subscribe",
+    qs,
+    async (eventName, data) => {
+      if (eventName === "connected") {
+        console.log("[ValueScan SSE] \u5927\u76D8\u5206\u6790\u5DF2\u8FDE\u63A5");
+        return;
+      }
+      if (eventName !== "market") return;
+      try {
+        const payload = JSON.parse(data);
+        const db2 = await getDb();
+        if (!db2) return;
+        const existing = await db2.select({ id: marketAnalysis.id }).from(marketAnalysis).where(eq2(marketAnalysis.uniqueId, payload.uniqueId)).limit(1);
+        if (existing.length > 0) return;
+        await db2.insert(marketAnalysis).values({
+          uniqueId: payload.uniqueId,
+          ts: payload.ts,
+          content: payload.content,
+          sentToTelegram: false
+        });
+        const time = new Date(payload.ts).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+        const msg = `\u{1F4CA} <b>AI \u5927\u76D8\u89E3\u6790</b>
+\u23F0 ${time}
+
+${payload.content.slice(0, 3e3)}`;
+        await sendToTelegram(msg);
+        await db2.update(marketAnalysis).set({ sentToTelegram: true }).where(eq2(marketAnalysis.uniqueId, payload.uniqueId));
+        console.log(`[ValueScan SSE] \u5927\u76D8\u5206\u6790\u5DF2\u5B58\u50A8\u5E76\u63A8\u9001: ${payload.uniqueId}`);
+      } catch (e) {
+        console.error("[ValueScan SSE] \u5927\u76D8\u5206\u6790\u5904\u7406\u5931\u8D25:", e);
+      }
+    }
+  );
+}
+var tokenSSEStop = null;
+function startTokenSignalSSE(tokens = "") {
+  if (tokenSSEStop) {
+    tokenSSEStop();
+    tokenSSEStop = null;
+  }
+  const apiKey = ENV.valueScanApiKey;
+  const secretKey = ENV.valueScanSecretKey;
+  if (!apiKey || !secretKey) {
+    console.warn("[ValueScan SSE] \u4EE3\u5E01\u4FE1\u53F7\u8BA2\u9605\uFF1AAPI Key \u672A\u914D\u7F6E\uFF0C\u8DF3\u8FC7");
+    return;
+  }
+  console.log(`[ValueScan SSE] \u542F\u52A8\u4EE3\u5E01\u4FE1\u53F7\u8BA2\u9605 tokens=${tokens || "\u5168\u90E8"}...`);
+  let qs;
+  try {
+    qs = buildSSEParams({ tokens });
+  } catch (e) {
+    console.error("[ValueScan SSE] \u7B7E\u540D\u5931\u8D25:", e);
+    return;
+  }
+  tokenSSEStop = connectSSE(
+    "/stream/signal/subscribe",
+    qs,
+    async (eventName, data) => {
+      if (eventName === "connected") {
+        console.log("[ValueScan SSE] \u4EE3\u5E01\u4FE1\u53F7\u5DF2\u8FDE\u63A5");
+        return;
+      }
+      if (eventName !== "signal") return;
+      try {
+        const payload = JSON.parse(data);
+        const db2 = await getDb();
+        if (!db2) return;
+        const uniqueKey = payload.uniqueKey ?? `${payload.tokenId}_${payload.ts}`;
+        const existing = await db2.select({ id: tokenSignals.id }).from(tokenSignals).where(eq2(tokenSignals.uniqueKey, uniqueKey)).limit(1);
+        if (existing.length > 0) return;
+        let contentObj = {};
+        try {
+          contentObj = JSON.parse(payload.content);
+        } catch {
+          contentObj = {};
+        }
+        const symbol = contentObj.symbol ?? "";
+        const name = contentObj.name ?? "";
+        const price = contentObj.price ?? "";
+        const percentChange24h = contentObj.percentChange24h ?? 0;
+        const scoring = contentObj.scoring ?? void 0;
+        const grade = contentObj.grade ?? void 0;
+        await db2.insert(tokenSignals).values({
+          uniqueKey,
+          tokenId: payload.tokenId,
+          type: payload.type,
+          symbol,
+          name,
+          price,
+          percentChange24h,
+          scoring: scoring ?? null,
+          grade: grade ?? null,
+          content: payload.content,
+          ts: payload.ts,
+          sentToTelegram: false
+        });
+        const typeLabel = payload.type === "OPPORTUNITY" ? "\u{1F7E2} \u673A\u4F1A\u4FE1\u53F7" : payload.type === "RISK" ? "\u{1F534} \u98CE\u9669\u4FE1\u53F7" : "\u{1F7E1} \u8D44\u91D1\u5F02\u52A8";
+        const scoreStr = scoring ? ` \u5F97\u5206: ${scoring.toFixed(0)}` : "";
+        const changeStr = percentChange24h ? ` 24h: ${percentChange24h > 0 ? "+" : ""}${percentChange24h.toFixed(2)}%` : "";
+        const time = new Date(payload.ts).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+        const msg = `${typeLabel}
+\u{1F48E} <b>${symbol}</b> (${name})
+\u{1F4B0} \u4EF7\u683C: $${price}${changeStr}${scoreStr}
+\u23F0 ${time}`;
+        await sendToTelegram(msg);
+        await db2.update(tokenSignals).set({ sentToTelegram: true }).where(eq2(tokenSignals.uniqueKey, uniqueKey));
+        console.log(`[ValueScan SSE] \u4EE3\u5E01\u4FE1\u53F7\u5DF2\u5B58\u50A8: ${payload.type} ${symbol} ${uniqueKey}`);
+        ;
+      } catch (e) {
+        console.error("[ValueScan SSE] \u4EE3\u5E01\u4FE1\u53F7\u5904\u7406\u5931\u8D25:", e);
+      }
+    }
+  );
+}
 
 // server/valueScanService.ts
 var TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1e3;
@@ -1700,6 +1972,7 @@ var userToken = "";
 var tokenSetAt = 0;
 var autoRefreshTimer = null;
 var tokenRefreshPromise = null;
+var bootstrapPromise = null;
 var bootstrapStartedAt = 0;
 var backgroundSubscriptionsStarted = false;
 var lastBootstrapError = "";
@@ -2081,6 +2354,47 @@ function startAutoRefreshTimer(email, password) {
     void runRefresh(true);
   }, TOKEN_REFRESH_INTERVAL_MS);
   return true;
+}
+function startValueScanSubscriptions() {
+  if (backgroundSubscriptionsStarted) return;
+  startMarketAnalysisSSE();
+  startTokenSignalSSE("");
+  backgroundSubscriptionsStarted = true;
+}
+async function bootstrapValueScanService() {
+  if (backgroundSubscriptionsStarted && autoRefreshTimer) {
+    return getVSTokenStatus();
+  }
+  if (bootstrapPromise) {
+    return bootstrapPromise;
+  }
+  bootstrapPromise = (async () => {
+    bootstrapStartedAt = Date.now();
+    lastBootstrapError = "";
+    try {
+      await initVSTokenFromDB();
+      const credentials = await resolveVSLoginCredentials();
+      if (credentials.email && credentials.password) {
+        console.log(`[ValueScan] \u4F7F\u7528 ${credentials.source} \u51ED\u8BC1\u81EA\u52A8\u767B\u5F55\u5E76\u542F\u52A8 30 \u5206\u949F\u5237\u65B0\u673A\u5236`);
+        startAutoRefreshTimer(credentials.email, credentials.password);
+      } else if (userToken) {
+        console.log("[ValueScan] \u672A\u53D1\u73B0\u767B\u5F55\u51ED\u8BC1\uFF0C\u6CBF\u7528\u5DF2\u6301\u4E45\u5316 Token \u7EE7\u7EED\u8FD0\u884C");
+      } else {
+        console.warn("[ValueScan] \u672A\u914D\u7F6E\u767B\u5F55\u51ED\u8BC1\uFF0C\u4EC5\u542F\u52A8 API Key/SSE \u5728\u7EBF\u8BA2\u9605");
+      }
+      startValueScanSubscriptions();
+      console.log("[ValueScan] \u5728\u7EBF\u63A5\u6536\u670D\u52A1\u5DF2\u542F\u52A8\uFF0C\u9ED8\u8BA4\u8BA2\u9605\u5168\u90E8\u4FE1\u53F7");
+      return getVSTokenStatus();
+    } catch (error) {
+      lastBootstrapError = String(error?.message || error || "unknown error");
+      console.error("[ValueScan] bootstrap failed:", error);
+      startValueScanSubscriptions();
+      return getVSTokenStatus();
+    }
+  })().finally(() => {
+    bootstrapPromise = null;
+  });
+  return bootstrapPromise;
 }
 
 // server/newsService.ts
@@ -6544,6 +6858,9 @@ function registerOAuthRoutes(app2) {
 // api/index.ts
 import path from "path";
 import fs from "fs";
+void bootstrapValueScanService().catch((error) => {
+  console.error("[ValueScan] serverless bootstrap failed:", error);
+});
 var app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
