@@ -279,7 +279,7 @@ importers:
         specifier: ^0.31.4
         version: 0.31.5
       esbuild:
-        specifier: ^0.25.0
+        specifier: ^0.25.10
         version: 0.25.10
       pnpm:
         specifier: ^10.15.1
