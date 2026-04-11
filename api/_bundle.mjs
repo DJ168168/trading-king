@@ -360,7 +360,7 @@ var init_schema = __esm({
   }
 });
 
-// api/index.ts
+// server/_api_entry.ts
 import "dotenv/config";
 import express from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -6861,7 +6861,7 @@ function registerOAuthRoutes(app2) {
   });
 }
 
-// api/index.ts
+// server/_api_entry.ts
 import path from "path";
 import fs from "fs";
 void bootstrapValueScanService().catch((error) => {
@@ -6912,7 +6912,7 @@ app.use("*", (req, res) => {
     res.status(404).json({ error: "Frontend not built" });
   }
 });
-var index_default = app;
+var api_entry_default = app;
 export {
-  index_default as default
+  api_entry_default as default
 };

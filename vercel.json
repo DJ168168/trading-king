@@ -1,6 +1,12 @@
 {
   "version": 2,
   "installCommand": "pnpm install --no-frozen-lockfile",
+  "functions": {
+    "api/runtime.js": {
+      "includeFiles": "api/_bundle.mjs",
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/assets/(.*)",
@@ -15,10 +21,10 @@
   "rewrites": [
     {
       "source": "/api/trpc/(.*)",
-      "destination": "/api/index"
+      "destination": "/api/runtime"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
