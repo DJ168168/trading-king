@@ -5031,12 +5031,15 @@ ${tradeStatus}
       password: z2.string().min(6),
       enableAutoRefresh: z2.boolean().default(true)
     })).mutation(async ({ input }) => {
+      await saveVSLoginCredentials(input.email, input.password, "", input.enableAutoRefresh);
       const result = await loginValueScan(input.email, input.password);
       if (!result.success || !result.token) {
-        return { success: false, message: result.msg || "\u767B\u5F55\u5931\u8D25" };
+        if (input.enableAutoRefresh) {
+          startAutoRefreshTimer(input.email, input.password);
+        }
+        return { success: false, message: `${result.msg || "\u767B\u5F55\u5931\u8D25"}\uFF08\u51ED\u8BC1\u5DF2\u4FDD\u5B58\uFF0C\u5C06\u81EA\u52A8\u91CD\u8BD5\uFF09` };
       }
       await setVSToken(result.token);
-      await saveVSLoginCredentials(input.email, input.password, "", input.enableAutoRefresh);
       if (input.enableAutoRefresh) {
         startAutoRefreshTimer(input.email, input.password);
       } else {

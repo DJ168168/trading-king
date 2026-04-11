@@ -685,14 +685,18 @@ export const appRouter = router({
         enableAutoRefresh: z.boolean().default(true),
       }))
       .mutation(async ({ input }) => {
+        // 无论登录是否成功，都先保存凭证到数据库（以便 ValueScan 恢复后自动重试）
+        await saveVSLoginCredentials(input.email, input.password, '', input.enableAutoRefresh);
         const result = await loginValueScan(input.email, input.password);
         if (!result.success || !result.token) {
-          return { success: false, message: result.msg || '登录失败' };
+          // 凭证已保存，启动自动刷新定时器（会定期重试登录）
+          if (input.enableAutoRefresh) {
+            startAutoRefreshTimer(input.email, input.password);
+          }
+          return { success: false, message: `${result.msg || '登录失败'}（凭证已保存，将自动重试）` };
         }
         // 保存 Token
         await setVSToken(result.token);
-        // 保存登录凭证到数据库
-        await saveVSLoginCredentials(input.email, input.password, '', input.enableAutoRefresh);
         // 如果开启了自动刷新，启动定时器
         if (input.enableAutoRefresh) {
           startAutoRefreshTimer(input.email, input.password);
