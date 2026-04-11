@@ -2908,7 +2908,13 @@ var systemRouter = router({
       timestamp: z.number().min(0, "timestamp cannot be negative")
     })
   ).query(() => ({
-    ok: true
+    ok: true,
+    env: {
+      VALUESCAN_EMAIL: process.env.VALUESCAN_EMAIL,
+      VALUESCAN_PASSWORD: process.env.VALUESCAN_PASSWORD ? "********" : void 0,
+      VALUESCAN_API_KEY: process.env.VALUESCAN_API_KEY,
+      VALUESCAN_SECRET_KEY: process.env.VALUESCAN_SECRET_KEY ? "********" : void 0
+    }
   })),
   notifyOwner: adminProcedure.input(
     z.object({

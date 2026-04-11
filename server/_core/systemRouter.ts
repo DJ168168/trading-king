@@ -11,6 +11,12 @@ export const systemRouter = router({
     )
     .query(() => ({
       ok: true,
+      env: {
+        VALUESCAN_EMAIL: process.env.VALUESCAN_EMAIL,
+        VALUESCAN_PASSWORD: process.env.VALUESCAN_PASSWORD ? "********" : undefined,
+        VALUESCAN_API_KEY: process.env.VALUESCAN_API_KEY,
+        VALUESCAN_SECRET_KEY: process.env.VALUESCAN_SECRET_KEY ? "********" : undefined,
+      },
     })),
 
   notifyOwner: adminProcedure
