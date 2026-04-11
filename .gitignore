@@ -4,6 +4,11 @@
 
 # Build outputs
 dist/
+!dist/
+!dist/public/
+!dist/public/index.html
+!dist/public/assets/
+!dist/public/assets/**
 build/
 *.dist
 
