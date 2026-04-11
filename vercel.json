@@ -1,6 +1,9 @@
 {
   "version": 2,
+  "framework": null,
+  "buildCommand": "pnpm run build:frontend",
   "installCommand": "pnpm install --no-frozen-lockfile",
+  "outputDirectory": "dist/public",
   "functions": {
     "api/runtime.js": {
       "includeFiles": [
