@@ -1,1 +1,5 @@
-export { default } from "./_bundle.mjs";
+import bundle from "./_bundle.cjs";
+
+const handler = bundle?.default ?? bundle;
+
+export default handler;

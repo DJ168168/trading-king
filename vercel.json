@@ -3,7 +3,12 @@
   "installCommand": "pnpm install --no-frozen-lockfile",
   "functions": {
     "api/runtime.js": {
-      "includeFiles": "api/_bundle.mjs",
+      "includeFiles": [
+        "api/_bundle.cjs"
+      ],
+      "maxDuration": 30
+    },
+    "api/test.js": {
       "maxDuration": 30
     }
   },
