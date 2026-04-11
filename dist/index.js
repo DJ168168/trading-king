@@ -7220,7 +7220,6 @@ import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig } from "vite";
-import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 var PROJECT_ROOT = import.meta.dirname;
 var LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
 var MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024;
@@ -7328,7 +7327,7 @@ function vitePluginManusDebugCollector() {
     }
   };
 }
-var plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+var plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusDebugCollector()];
 var vite_config_default = defineConfig({
   plugins,
   resolve: {
