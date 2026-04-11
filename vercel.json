@@ -1,25 +1,18 @@
 {
   "version": 2,
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "builds": [
-    {
-      "src": "api/index.ts",
-      "use": "@vercel/node"
-    }
-  ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.ts"
-    },
     {
       "src": "/assets/(.*)",
       "headers": { "cache-control": "public, max-age=31536000, immutable" },
       "dest": "/dist/public/assets/$1"
     },
     {
-      "src": "/(.*\\.(js|css|ico|png|svg|woff|woff2|ttf|eot|map))",
+      "src": "/(.*\\.(js|css|ico|png|svg|woff|woff2|ttf|eot|map|webp|jpg|jpeg|gif))",
       "dest": "/dist/public/$1"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
