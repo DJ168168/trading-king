@@ -724,6 +724,14 @@ export const appRouter = router({
       return { success: true, message: '已停止自动刷新' };
     }),
 
+    // 手动设置 Token
+    setToken: publicProcedure
+      .input(z.object({ token: z.string().min(10) }))
+      .mutation(async ({ input }) => {
+        await setVSToken(input.token);
+        return { success: true, message: 'Token 已手动更新' };
+      }),
+
     // 获取 Token 状态（如果内存中没有，先从数据库加载）
     tokenStatus: publicProcedure.query(async () => {
       await initVSTokenFromDB();
