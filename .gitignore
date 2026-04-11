@@ -3,11 +3,7 @@
 .pnpm-store/
 
 # Build outputs
-dist/*
-!dist/public/
-!dist/public/**
-!dist/api/
-!dist/api/**
+dist/
 build/
 *.dist
 

@@ -84,6 +84,17 @@ setTimeout(async () => {
   }
 }, 3000);
 
+// 启动 ValueScan 自动登录、Token 刷新与在线信号订阅
+setTimeout(async () => {
+  try {
+    const { bootstrapValueScanService } = await import('../valueScanService');
+    const status = await bootstrapValueScanService();
+    console.log('[AutoStart] ValueScan 在线服务已启动:', status);
+  } catch (e) {
+    console.error('[AutoStart] ValueScan 在线服务启动失败:', e);
+  }
+}, 3500);
+
 // 启动每日报告定时任务（UTC+8 20:00 推送）
 setTimeout(async () => {
   try {

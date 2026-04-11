@@ -10,6 +10,9 @@ export const ENV = {
   // ValueScan API (HMAC-SHA256 signed)
   valueScanApiKey: process.env.VALUESCAN_API_KEY ?? "",
   valueScanSecretKey: process.env.VALUESCAN_SECRET_KEY ?? "",
+  // ValueScan Login
+  valueScanEmail: process.env.VALUESCAN_EMAIL ?? "",
+  valueScanPassword: process.env.VALUESCAN_PASSWORD ?? "",
   // ValueScan User Token (Bearer auth for warnMessage / real-time alerts)
   valueScanToken: process.env.VALUESCAN_TOKEN ?? "",
   // Binance API

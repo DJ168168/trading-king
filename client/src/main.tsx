@@ -24,7 +24,7 @@ const queryClient = new QueryClient({
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: "/api/trpc",
+      url: "/trpc",
       fetch(url, options) {
         return fetch(url, {
           ...options,

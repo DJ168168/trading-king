@@ -1,4 +1,9 @@
+import { ENV } from "./_core/env";
 import { getActiveConfig, loadVSLoginCredentials, updateStrategyConfig } from "./db";
+import { startMarketAnalysisSSE, startTokenSignalSSE } from "./valueScanSSEService";
+
+const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+const TOKEN_STALE_AFTER_MS = 28 * 60 * 1000;
 
 export const FUNDS_MOVEMENT_TYPE_MAP: Record<number, { name: string; category: string; direction: "long" | "short" | "neutral" }> = {
   1: { name: "FOMO 做多", category: "fomo", direction: "long" },
@@ -51,9 +56,31 @@ export type VSRiskCoinItem = VSFundsCoinItem & {
   riskLevel?: string;
 };
 
+type VSLoginCredentials = {
+  email: string;
+  password: string;
+  source: "input" | "env" | "db" | "none";
+};
+
+type VSLoginResult = {
+  success: boolean;
+  token: string;
+  msg: string;
+  isMock?: boolean;
+};
+
 let userToken = "";
 let tokenSetAt = 0;
 let autoRefreshTimer: NodeJS.Timeout | null = null;
+let tokenRefreshPromise: Promise<string> | null = null;
+let bootstrapPromise: Promise<any> | null = null;
+let bootstrapStartedAt = 0;
+let backgroundSubscriptionsStarted = false;
+let lastBootstrapError = "";
+
+function isTokenFresh() {
+  return Boolean(userToken) && Date.now() - tokenSetAt < TOKEN_STALE_AFTER_MS;
+}
 
 function normalizeSymbol(symbol: string) {
   return String(symbol || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
@@ -107,23 +134,79 @@ function withMessage<T>(data: T, message = "ok") {
 
 async function getVsCredentials() {
   const cfg = await getActiveConfig();
-  const apiKey = (cfg as any)?.vsApiKey || process.env.VALUESCAN_API_KEY || process.env.VS_API_KEY || "";
-  const secretKey = (cfg as any)?.vsSecretKey || process.env.VALUESCAN_SECRET_KEY || process.env.VS_SECRET_KEY || "";
+  const apiKey = (cfg as any)?.vsApiKey || process.env.VALUESCAN_API_KEY || process.env.VS_API_KEY || ENV.valueScanApiKey || "";
+  const secretKey = (cfg as any)?.vsSecretKey || process.env.VALUESCAN_SECRET_KEY || process.env.VS_SECRET_KEY || ENV.valueScanSecretKey || "";
   return { apiKey, secretKey, cfg };
+}
+
+async function resolveVSLoginCredentials(preferred?: Partial<VSLoginCredentials>): Promise<VSLoginCredentials> {
+  if (preferred?.email && preferred?.password) {
+    return {
+      email: String(preferred.email).trim(),
+      password: String(preferred.password),
+      source: "input",
+    };
+  }
+
+  const envEmail = String(process.env.VALUESCAN_EMAIL || "").trim();
+  const envPassword = String(process.env.VALUESCAN_PASSWORD || "");
+  if (envEmail && envPassword) {
+    return {
+      email: envEmail,
+      password: envPassword,
+      source: "env",
+    };
+  }
+
+  const saved = await loadVSLoginCredentials();
+  if (saved?.email && saved?.password) {
+    return {
+      email: String(saved.email).trim(),
+      password: String(saved.password),
+      source: "db",
+    };
+  }
+
+  return { email: "", password: "", source: "none" };
 }
 
 async function requestValueScan(path: string, init: RequestInit = {}, requireAuth = false) {
   const { apiKey, secretKey } = await getVsCredentials();
-  const headers = new Headers(init.headers || {});
-  headers.set("accept", "application/json");
-  if (apiKey) headers.set("X-API-KEY", apiKey);
-  if (secretKey) headers.set("X-SECRET-KEY", secretKey);
-  if (requireAuth && userToken) headers.set("authorization", `Bearer ${userToken}`);
   const url = path.startsWith("http") ? path : `https://api.valuescan.io${path}`;
-  const res = await fetch(url, { ...init, headers });
-  const text = await res.text();
-  let json: any = null;
-  try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
+
+  const doRequest = async (token = "") => {
+    const headers = new Headers(init.headers || {});
+    headers.set("accept", "application/json");
+    if (apiKey) headers.set("X-API-KEY", apiKey);
+    if (secretKey) headers.set("X-SECRET-KEY", secretKey);
+    if (requireAuth && token) headers.set("authorization", `Bearer ${token}`);
+    const res = await fetch(url, { ...init, headers });
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = { raw: text };
+    }
+    return { res, json };
+  };
+
+  let token = "";
+  if (requireAuth) {
+    token = await ensureVSToken();
+  }
+
+  let { res, json } = await doRequest(token || userToken);
+
+  if (requireAuth && res.status === 401) {
+    token = await refreshValueScanToken(undefined, true).catch(() => "");
+    if (token) {
+      const retry = await doRequest(token);
+      res = retry.res;
+      json = retry.json;
+    }
+  }
+
   if (!res.ok) throw new Error(json?.msg || json?.message || `HTTP ${res.status}`);
   return json;
 }
@@ -180,20 +263,81 @@ export function getVSToken() {
 
 export function getVSTokenStatus() {
   return {
-    apiKeyOk: Boolean(process.env.VALUESCAN_API_KEY || process.env.VS_API_KEY),
+    apiKeyOk: Boolean(process.env.VALUESCAN_API_KEY || process.env.VS_API_KEY || ENV.valueScanApiKey),
     hasUserToken: Boolean(userToken),
     tokenSetAt,
+    tokenAgeMs: tokenSetAt ? Date.now() - tokenSetAt : null,
+    autoRefreshRunning: autoRefreshTimer !== null,
+    hasEnvLoginCredentials: Boolean(process.env.VALUESCAN_EMAIL && process.env.VALUESCAN_PASSWORD),
+    backgroundSubscriptionsStarted,
+    bootstrapStartedAt,
+    lastBootstrapError,
   };
 }
 
 export async function initVSTokenFromDB() {
   if (userToken) return userToken;
+  if (ENV.valueScanToken) {
+    userToken = ENV.valueScanToken;
+    tokenSetAt = Date.now();
+    return userToken;
+  }
   const cfg = await getActiveConfig();
   if ((cfg as any)?.vsUserToken) {
     userToken = (cfg as any).vsUserToken;
     tokenSetAt = Number((cfg as any).vsTokenSetAt ?? 0);
   }
   return userToken;
+}
+
+async function refreshValueScanToken(preferred?: Partial<VSLoginCredentials>, force = false): Promise<string> {
+  if (!force && isTokenFresh()) {
+    return userToken;
+  }
+
+  if (tokenRefreshPromise && !force) {
+    return tokenRefreshPromise;
+  }
+
+  tokenRefreshPromise = (async () => {
+    if (!force) {
+      await initVSTokenFromDB();
+      if (isTokenFresh()) {
+        return userToken;
+      }
+    }
+
+    const credentials = await resolveVSLoginCredentials(preferred);
+    if (!credentials.email || !credentials.password) {
+      if (userToken) {
+        return userToken;
+      }
+      throw new Error("未配置 ValueScan 登录凭证");
+    }
+
+    const result = await loginValueScan(credentials.email, credentials.password);
+    if (!result.success || !result.token) {
+      throw new Error(result.msg || "ValueScan 登录失败");
+    }
+
+    await setVSToken(result.token);
+    return result.token;
+  })().finally(() => {
+    tokenRefreshPromise = null;
+  });
+
+  return tokenRefreshPromise;
+}
+
+export async function ensureVSToken(forceRefresh = false) {
+  if (!forceRefresh && isTokenFresh()) {
+    return userToken;
+  }
+  await initVSTokenFromDB();
+  if (!forceRefresh && userToken && Date.now() - tokenSetAt < TOKEN_REFRESH_INTERVAL_MS) {
+    return userToken;
+  }
+  return refreshValueScanToken(undefined, forceRefresh);
 }
 
 export async function getWarnMessages(pageNum = 1, pageSize = 20) {
@@ -334,7 +478,11 @@ export async function getCoinSocialSentiment(symbol: string) {
 export async function getWarnMessageWithToken(pageNum = 1, pageSize = 20) {
   await initVSTokenFromDB();
   if (!userToken) {
-    return { code: 401, msg: "未配置用户 Token", data: [], expired: false };
+    try {
+      await ensureVSToken();
+    } catch {
+      return { code: 401, msg: "未配置用户 Token", data: [], expired: false };
+    }
   }
   try {
     const json = await requestValueScan(`/api/v1/user/warn-messages?pageNum=${pageNum}&pageSize=${pageSize}`, {}, true);
@@ -346,12 +494,18 @@ export async function getWarnMessageWithToken(pageNum = 1, pageSize = 20) {
   }
 }
 
-export async function loginValueScan(email: string, password: string) {
+export async function loginValueScan(email: string, password: string): Promise<VSLoginResult> {
+  const normalizedEmail = String(email || "").trim();
+  const normalizedPassword = String(password || "");
+  if (!normalizedEmail || !normalizedPassword) {
+    return { success: false, token: "", msg: "ValueScan 登录邮箱或密码为空" };
+  }
+
   try {
     const json = await requestValueScan(`/api/v1/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: normalizedEmail, password: normalizedPassword }),
     });
     const token = json?.data?.token || json?.token || json?.data?.accessToken || "";
     if (token) {
@@ -359,11 +513,14 @@ export async function loginValueScan(email: string, password: string) {
       tokenSetAt = Date.now();
     }
     return { success: Boolean(token), token, msg: token ? "登录成功" : "未获取到 Token" };
-  } catch {
-    const mockToken = `vs_mock_${Buffer.from(email).toString("base64url")}`;
+  } catch (error: any) {
+    if (process.env.NODE_ENV === "production") {
+      return { success: false, token: "", msg: error?.message || "ValueScan 登录失败" };
+    }
+    const mockToken = `vs_mock_${Buffer.from(normalizedEmail).toString("base64url")}`;
     userToken = mockToken;
     tokenSetAt = Date.now();
-    return { success: true, token: mockToken, msg: "已切换到离线模拟 Token" };
+    return { success: true, token: mockToken, msg: "已切换到离线模拟 Token", isMock: true };
   }
 }
 
@@ -374,19 +531,74 @@ export function stopAutoRefreshTimer() {
 
 export function startAutoRefreshTimer(email?: string, password?: string) {
   stopAutoRefreshTimer();
-  autoRefreshTimer = setInterval(async () => {
+
+  const runRefresh = async (force = false) => {
     try {
-      let credentials = { email: email || "", password: password || "" };
+      const credentials = await resolveVSLoginCredentials({ email: email || "", password: password || "", source: "input" });
       if (!credentials.email || !credentials.password) {
-        const saved = await loadVSLoginCredentials();
-        credentials = { email: saved?.email || "", password: saved?.password || "" };
+        if (!userToken) {
+          console.warn("[ValueScan] 未找到可用登录凭证，跳过 Token 刷新");
+        }
+        return;
       }
-      if (!credentials.email || !credentials.password) return;
-      const result = await loginValueScan(credentials.email, credentials.password);
-      if (result.success && result.token) await setVSToken(result.token);
+      const token = await refreshValueScanToken(credentials, force);
+      console.log(`[ValueScan] Token 已刷新，来源=${credentials.source}，长度=${token.length}`);
     } catch (error) {
       console.error("[ValueScan] auto refresh failed:", error);
     }
-  }, 50 * 60 * 1000);
+  };
+
+  void runRefresh(true);
+  autoRefreshTimer = setInterval(() => {
+    void runRefresh(true);
+  }, TOKEN_REFRESH_INTERVAL_MS);
   return true;
+}
+
+function startValueScanSubscriptions() {
+  if (backgroundSubscriptionsStarted) return;
+  startMarketAnalysisSSE();
+  startTokenSignalSSE("");
+  backgroundSubscriptionsStarted = true;
+}
+
+export async function bootstrapValueScanService() {
+  if (backgroundSubscriptionsStarted && autoRefreshTimer) {
+    return getVSTokenStatus();
+  }
+  if (bootstrapPromise) {
+    return bootstrapPromise;
+  }
+
+  bootstrapPromise = (async () => {
+    bootstrapStartedAt = Date.now();
+    lastBootstrapError = "";
+
+    try {
+      await initVSTokenFromDB();
+      const credentials = await resolveVSLoginCredentials();
+
+      if (credentials.email && credentials.password) {
+        console.log(`[ValueScan] 使用 ${credentials.source} 凭证自动登录并启动 30 分钟刷新机制`);
+        startAutoRefreshTimer(credentials.email, credentials.password);
+      } else if (userToken) {
+        console.log("[ValueScan] 未发现登录凭证，沿用已持久化 Token 继续运行");
+      } else {
+        console.warn("[ValueScan] 未配置登录凭证，仅启动 API Key/SSE 在线订阅");
+      }
+
+      startValueScanSubscriptions();
+      console.log("[ValueScan] 在线接收服务已启动，默认订阅全部信号");
+      return getVSTokenStatus();
+    } catch (error: any) {
+      lastBootstrapError = String(error?.message || error || "unknown error");
+      console.error("[ValueScan] bootstrap failed:", error);
+      startValueScanSubscriptions();
+      return getVSTokenStatus();
+    }
+  })().finally(() => {
+    bootstrapPromise = null;
+  });
+
+  return bootstrapPromise;
 }

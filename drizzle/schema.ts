@@ -328,25 +328,25 @@ export const paperEquityCurve = mysqlTable("paper_equity_curve", {
 });
 export type PaperEquityCurve = typeof paperEquityCurve.$inferSelect;
 
-// ValueScan SSE 大盘分析存储表
+// ValueScan AI 大盘解析表
 export const marketAnalysis = mysqlTable("market_analysis", {
   id: int("id").autoincrement().primaryKey(),
-  uniqueId: varchar("uniqueId", { length: 128 }).notNull().unique(),
+  uniqueId: varchar("uniqueId", { length: 255 }).notNull().unique(),
   ts: bigint("ts", { mode: "number" }).notNull(),
   content: text("content").notNull(),
-  sentToTelegram: boolean("sentToTelegram").default(false).notNull(),
+  sentToTelegram: boolean("sentToTelegram").default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
 export type MarketAnalysis = typeof marketAnalysis.$inferSelect;
 export type InsertMarketAnalysis = typeof marketAnalysis.$inferInsert;
 
-// ValueScan SSE 代币信号存储表
+// ValueScan 代币信号流表
 export const tokenSignals = mysqlTable("token_signals", {
   id: int("id").autoincrement().primaryKey(),
-  uniqueKey: varchar("uniqueKey", { length: 160 }).notNull().unique(),
+  uniqueKey: varchar("uniqueKey", { length: 255 }).notNull().unique(),
   tokenId: int("tokenId").notNull(),
-  type: varchar("type", { length: 32 }).notNull(),
+  type: mysqlEnum("type", ["OPPORTUNITY", "RISK", "FUNDS"]).notNull(),
   symbol: varchar("symbol", { length: 32 }).default(""),
   name: varchar("name", { length: 128 }).default(""),
   price: varchar("price", { length: 64 }).default(""),
@@ -355,9 +355,9 @@ export const tokenSignals = mysqlTable("token_signals", {
   grade: float("grade"),
   content: text("content").notNull(),
   ts: bigint("ts", { mode: "number" }).notNull(),
-  sentToTelegram: boolean("sentToTelegram").default(false).notNull(),
+  sentToTelegram: boolean("sentToTelegram").default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
 export type TokenSignal = typeof tokenSignals.$inferSelect;
 export type InsertTokenSignal = typeof tokenSignals.$inferInsert;
