@@ -945,26 +945,45 @@ export const appRouter = router({
         }
       }),
 
-    // 主力成本历史偏离度 - 基于当前数据模拟历史走势
+    // 主力成本历史偏离度 - 优先使用真实历史统计，无数据时回退模拟
     whaleCostDeviationHistory: publicProcedure
       .input(z.object({ symbol: z.string() }))
       .query(async ({ input }) => {
         try {
+          const symbol = input.symbol.toUpperCase();
           const resp = await getFundsCoinList();
-          const found = (resp.data || []).find(item => item.symbol.toUpperCase() === input.symbol.toUpperCase());
+          const found = (resp.data || []).find(item => item.symbol.toUpperCase() === symbol);
           if (!found) return { success: false, data: [], error: '未找到该代币数据' };
+          
           const pushPrice = parseFloat(found.pushPrice ?? '0');
           const currentPrice = parseFloat(found.price ?? '0');
           const currentDeviation = pushPrice > 0 && currentPrice > 0 ? ((currentPrice - pushPrice) / pushPrice) * 100 : 0;
-          const gains = found.gains ?? 0;
-          // 基于当前偏离度和历史收益模拟过去30天的偏离度走势
+          
+          // 尝试从数据库获取真实历史统计
+          const stats = await getVsSignalStats({ limit: 30 });
+          const realHistory = stats
+            .filter(s => s.symbol.toUpperCase() === symbol && s.pnlPct24h !== null)
+            .map(s => ({
+              date: new Date(s.createdAt).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }),
+              ts: new Date(s.createdAt).getTime(),
+              deviation: parseFloat((s.pnlPct24h ?? 0).toFixed(2))
+            }))
+            .sort((a, b) => a.ts - b.ts);
+
+          if (realHistory.length >= 5) {
+            // 如果有足够的真实数据，直接返回
+            return { success: true, data: realHistory, currentDeviation: parseFloat(currentDeviation.toFixed(2)), pushPrice, currentPrice, isReal: true };
+          }
+
+          // 无足够真实数据时，使用平滑模拟逻辑
           const now = Date.now();
           const dayMs = 86400000;
+          const gains = found.gains ?? 0;
           const history = Array.from({ length: 30 }, (_, i) => {
             const daysAgo = 29 - i;
             const ts = now - daysAgo * dayMs;
-            const seed = (daysAgo * 7 + input.symbol.charCodeAt(0)) % 100;
-            const noise = Math.sin(seed * 0.7) * 8 + Math.cos(seed * 1.3) * 5;
+            const seed = (daysAgo * 7 + symbol.charCodeAt(0)) % 100;
+            const noise = Math.sin(seed * 0.7) * 5 + Math.cos(seed * 1.3) * 3;
             const startDev = gains - currentDeviation;
             const progress = i / 29;
             const trendDev = startDev * (1 - progress) + currentDeviation * progress;
@@ -972,7 +991,7 @@ export const appRouter = router({
             return { date: new Date(ts).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }), ts, deviation };
           });
           history[29].deviation = parseFloat(currentDeviation.toFixed(2));
-          return { success: true, data: history, currentDeviation: parseFloat(currentDeviation.toFixed(2)), pushPrice, currentPrice };
+          return { success: true, data: history, currentDeviation: parseFloat(currentDeviation.toFixed(2)), pushPrice, currentPrice, isReal: false };
         } catch (e: any) {
           return { success: false, data: [], error: e.message };
         }
@@ -1804,7 +1823,24 @@ export const appRouter = router({
       const d = await getDb();
       if (!d) return null;
       const rows = await d.select().from(paperAccount).where(eq(paperAccount.id, 1)).limit(1);
-      return rows[0] ?? null;
+      if (rows[0]) return rows[0];
+      
+      // 自动初始化模拟账户
+      try {
+        await d.insert(paperAccount).values({
+          id: 1,
+          balance: 10000,
+          totalBalance: 10000,
+          initialBalance: 10000,
+          peakBalance: 10000,
+          autoTradingEnabled: false,
+        });
+        const newRows = await d.select().from(paperAccount).where(eq(paperAccount.id, 1)).limit(1);
+        return newRows[0] ?? null;
+      } catch (e) {
+        console.error("[PaperTrading] 自动初始化失败:", e);
+        return null;
+      }
     }),
 
     // 获取当前持仓
