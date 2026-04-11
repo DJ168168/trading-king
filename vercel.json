@@ -14,8 +14,8 @@
   ],
   "rewrites": [
     {
-      "source": "/api/trpc/(.*)",
-      "destination": "/api/index"
+      "source": "/api/(.*)",
+      "destination": "/api/runtime"
     },
     {
       "source": "/(.*)",
