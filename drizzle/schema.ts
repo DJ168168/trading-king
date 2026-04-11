@@ -327,3 +327,37 @@ export const paperEquityCurve = mysqlTable("paper_equity_curve", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type PaperEquityCurve = typeof paperEquityCurve.$inferSelect;
+
+// ValueScan SSE 大盘分析存储表
+export const marketAnalysis = mysqlTable("market_analysis", {
+  id: int("id").autoincrement().primaryKey(),
+  uniqueId: varchar("uniqueId", { length: 128 }).notNull().unique(),
+  ts: bigint("ts", { mode: "number" }).notNull(),
+  content: text("content").notNull(),
+  sentToTelegram: boolean("sentToTelegram").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MarketAnalysis = typeof marketAnalysis.$inferSelect;
+export type InsertMarketAnalysis = typeof marketAnalysis.$inferInsert;
+
+// ValueScan SSE 代币信号存储表
+export const tokenSignals = mysqlTable("token_signals", {
+  id: int("id").autoincrement().primaryKey(),
+  uniqueKey: varchar("uniqueKey", { length: 160 }).notNull().unique(),
+  tokenId: int("tokenId").notNull(),
+  type: varchar("type", { length: 32 }).notNull(),
+  symbol: varchar("symbol", { length: 32 }).default(""),
+  name: varchar("name", { length: 128 }).default(""),
+  price: varchar("price", { length: 64 }).default(""),
+  percentChange24h: float("percentChange24h").default(0),
+  scoring: float("scoring"),
+  grade: float("grade"),
+  content: text("content").notNull(),
+  ts: bigint("ts", { mode: "number" }).notNull(),
+  sentToTelegram: boolean("sentToTelegram").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type TokenSignal = typeof tokenSignals.$inferSelect;
+export type InsertTokenSignal = typeof tokenSignals.$inferInsert;
