@@ -4,7 +4,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/[...path]"
+      "dest": "/api/runtime"
     },
     {
       "src": "/assets/(.*)",
