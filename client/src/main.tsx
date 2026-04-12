@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
+import { httpLink } from "@trpc/client";
 import { Toaster } from "@/components/ui/sonner";
 import App from "./App";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -23,7 +23,7 @@ const queryClient = new QueryClient({
 
 const trpcClient = trpc.createClient({
   links: [
-    httpBatchLink({
+    httpLink({
       url: "/api/trpc",
       fetch(url, options) {
         return fetch(url, {
