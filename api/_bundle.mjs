@@ -2844,74 +2844,100 @@ async function getCoinNewsSentiment(symbol) {
 import { TRPCError as TRPCError3 } from "@trpc/server";
 
 // server/coinGlassService.ts
-var COINGLASS_BASE = "https://open-api-v3.coinglass.com/api";
-async function cgFetch(path2) {
-  const res = await fetch(`${COINGLASS_BASE}${path2}`, {
-    headers: { "CG-API-KEY": ENV.coinGlassApiKey }
-  });
-  if (!res.ok) throw new Error(`CoinGlass API error: ${res.status}`);
-  const json2 = await res.json();
-  if (json2.code !== "0" && json2.success !== true) {
-    throw new Error(`CoinGlass error: ${json2.msg || "unknown"}`);
+var COINGLASS_BASE_V4 = "https://open-api-v4.coinglass.com";
+var CG_API_KEY = process.env.COINGLASS_API_KEY ?? "9b35573cdb9d49d68c49c2b462c350e6";
+async function cgFetchV4(path2, params = {}) {
+  const url = new URL(`${COINGLASS_BASE_V4}${path2}`);
+  for (const [k, v] of Object.entries(params)) {
+    url.searchParams.set(k, String(v));
   }
+  const res = await fetch(url.toString(), {
+    headers: { "CG-API-KEY": CG_API_KEY, "accept": "application/json" },
+    signal: AbortSignal.timeout(12e3)
+  });
+  if (!res.ok) throw new Error(`CoinGlass API error: ${res.status} ${url.pathname}`);
+  const json2 = await res.json();
+  if (json2.code !== "0") throw new Error(`CoinGlass error: ${json2.msg || "unknown"} (code=${json2.code})`);
   return json2.data;
 }
-async function getAllFundingRates() {
-  const data = await cgFetch(`/futures/fundingRate/exchange-list?symbol=BTC`);
-  if (Array.isArray(data)) return data;
-  return [data];
+async function getGlobalLongShortRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+  return cgFetchV4("/api/futures/global-long-short-account-ratio/history", { exchange, symbol, interval, limit });
 }
-async function getMultiFundingRates(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]) {
-  const all = await getAllFundingRates();
-  const upperSymbols = symbols.map((s) => s.toUpperCase());
-  return all.filter((d) => upperSymbols.includes(d.symbol));
+async function getTopAccountRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+  return cgFetchV4("/api/futures/top-long-short-account-ratio/history", { exchange, symbol, interval, limit });
 }
-async function getAllOpenInterestRaw() {
-  const data = await cgFetch(`/futures/openInterest/exchange-list?symbol=BTC`);
-  if (Array.isArray(data)) return data;
-  return [data];
+async function getTopPositionRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+  return cgFetchV4("/api/futures/top-long-short-position-ratio/history", { exchange, symbol, interval, limit });
 }
-async function getMultiOpenInterest(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]) {
-  const all = await getAllOpenInterestRaw();
-  const upperSymbols = symbols.map((s) => s.toUpperCase());
-  const grouped = /* @__PURE__ */ new Map();
-  for (const r of all) {
-    if (upperSymbols.includes(r.symbol)) {
-      if (!grouped.has(r.symbol)) grouped.set(r.symbol, []);
-      grouped.get(r.symbol).push(r);
-    }
-  }
-  return upperSymbols.filter((s) => grouped.has(s)).map((s) => {
-    const records = grouped.get(s);
-    const allRecord = records.find((r) => r.exchange === "All");
-    return {
-      symbol: s,
-      total: allRecord?.openInterest ?? records.reduce((sum, r) => sum + (r.openInterest || 0), 0),
-      totalAmount: allRecord?.openInterestAmount ?? 0,
-      changePercent1h: allRecord?.openInterestChangePercent1h ?? 0,
-      changePercent4h: allRecord?.openInterestChangePercent4h ?? 0,
-      changePercent24h: allRecord?.openInterestChangePercent24h ?? 0,
-      exchanges: records.filter((r) => r.exchange !== "All")
-    };
-  });
+async function getLiquidationCoinList() {
+  return cgFetchV4("/api/futures/liquidation/coin-list");
+}
+async function getLiquidationHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+  return cgFetchV4("/api/futures/liquidation/history", { exchange, symbol, interval, limit });
+}
+async function getCVDHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+  return cgFetchV4("/api/futures/taker-buy-sell-volume/history", { exchange, symbol, interval, limit });
+}
+async function getBTCETFFlows(limit = 30) {
+  return cgFetchV4("/api/etf/bitcoin/flow-history", { limit });
+}
+async function getFearGreedHistory(limit = 30) {
+  return cgFetchV4("/api/index/fear-greed-history", { limit });
+}
+async function getCoinGlassPanelData() {
+  const [globalLS, topAccount, topPosition, liqCoins, liqHistory, cvd, etf, fg] = await Promise.allSettled([
+    getGlobalLongShortRatio("Binance", "BTCUSDT", "1h", 24),
+    getTopAccountRatio("Binance", "BTCUSDT", "1h", 24),
+    getTopPositionRatio("Binance", "BTCUSDT", "1h", 24),
+    getLiquidationCoinList(),
+    getLiquidationHistory("Binance", "BTCUSDT", "1h", 24),
+    getCVDHistory("Binance", "BTCUSDT", "1h", 24),
+    getBTCETFFlows(30),
+    getFearGreedHistory(30)
+  ]);
+  const latest = (arr) => arr && arr.length > 0 ? arr[arr.length - 1] : null;
+  const globalLSData = globalLS.status === "fulfilled" ? globalLS.value : null;
+  const topAccountData = topAccount.status === "fulfilled" ? topAccount.value : null;
+  const topPositionData = topPosition.status === "fulfilled" ? topPosition.value : null;
+  return {
+    globalLongShort: globalLSData ? {
+      longPercent: latest(globalLSData)?.global_account_long_percent ?? 0,
+      shortPercent: latest(globalLSData)?.global_account_short_percent ?? 0,
+      ratio: latest(globalLSData)?.global_account_long_short_ratio ?? 1,
+      history: globalLSData
+    } : null,
+    topAccountRatio: topAccountData ? {
+      longPercent: latest(topAccountData)?.top_account_long_percent ?? 0,
+      shortPercent: latest(topAccountData)?.top_account_short_percent ?? 0,
+      ratio: latest(topAccountData)?.top_account_long_short_ratio ?? 1,
+      history: topAccountData
+    } : null,
+    topPositionRatio: topPositionData ? {
+      longPercent: latest(topPositionData)?.top_position_long_percent ?? 0,
+      shortPercent: latest(topPositionData)?.top_position_short_percent ?? 0,
+      ratio: latest(topPositionData)?.top_position_long_short_ratio ?? 1,
+      history: topPositionData
+    } : null,
+    liquidationCoins: liqCoins.status === "fulfilled" ? liqCoins.value.slice(0, 20) : [],
+    liquidationHistory: liqHistory.status === "fulfilled" ? liqHistory.value : [],
+    cvdHistory: cvd.status === "fulfilled" ? cvd.value : [],
+    etfFlows: etf.status === "fulfilled" ? etf.value : [],
+    fearGreed: fg.status === "fulfilled" ? {
+      current: fg.value.data_list[fg.value.data_list.length - 1] ?? 50,
+      history: fg.value.data_list,
+      timeList: fg.value.time_list
+    } : null,
+    fetchedAt: Date.now()
+  };
 }
 async function getLongShortRatio(symbol = "BTCUSDT") {
   try {
-    const res = await fetch(
-      `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`,
-      { signal: AbortSignal.timeout(8e3) }
-    );
+    const res = await fetch(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`, { signal: AbortSignal.timeout(8e3) });
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) return null;
-    const latest = data[0];
-    return {
-      symbol,
-      longShortRatio: parseFloat(latest.longShortRatio),
-      longAccount: parseFloat(latest.longAccount),
-      shortAccount: parseFloat(latest.shortAccount),
-      timestamp: latest.timestamp
-    };
+    const l = data[0];
+    return { symbol, longShortRatio: parseFloat(l.longShortRatio), longAccount: parseFloat(l.longAccount), shortAccount: parseFloat(l.shortAccount), timestamp: l.timestamp };
   } catch {
     return null;
   }
@@ -2920,18 +2946,31 @@ async function getMultiLongShortRatio(symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"
   const results = await Promise.allSettled(symbols.map((s) => getLongShortRatio(s)));
   return results.filter((r) => r.status === "fulfilled" && r.value !== null).map((r) => r.value);
 }
+async function getMultiFundingRates(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]) {
+  try {
+    const res = await fetch("https://fapi.binance.com/fapi/v1/premiumIndex", { signal: AbortSignal.timeout(8e3) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return symbols.map((sym) => {
+      const item = data.find((d) => d.symbol === `${sym}USDT`);
+      return { symbol: sym, usdtOrUsdMarginList: item ? [{ exchange: "Binance", fundingRate: parseFloat(item.lastFundingRate) * 100, nextFundingTime: item.nextFundingTime, fundingIntervalHours: 8 }] : [] };
+    });
+  } catch {
+    return [];
+  }
+}
+async function getMultiOpenInterest(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]) {
+  const results = await Promise.allSettled(symbols.map(async (sym) => {
+    const res = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${sym}USDT`, { signal: AbortSignal.timeout(8e3) });
+    if (!res.ok) return null;
+    const d = await res.json();
+    return { symbol: sym, total: parseFloat(d.openInterest), totalAmount: 0, changePercent1h: 0, changePercent4h: 0, changePercent24h: 0, exchanges: [] };
+  }));
+  return results.filter((r) => r.status === "fulfilled" && r.value !== null).map((r) => r.value);
+}
 async function getMarketOverview(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]) {
-  const [fundingRates, openInterests, longShortRatios] = await Promise.allSettled([
-    getMultiFundingRates(symbols),
-    getMultiOpenInterest(symbols),
-    getMultiLongShortRatio(symbols.map((s) => `${s}USDT`))
-  ]);
-  return {
-    fundingRates: fundingRates.status === "fulfilled" ? fundingRates.value : [],
-    openInterests: openInterests.status === "fulfilled" ? openInterests.value : [],
-    longShortRatios: longShortRatios.status === "fulfilled" ? longShortRatios.value : [],
-    fetchedAt: Date.now()
-  };
+  const [fr, oi, ls] = await Promise.allSettled([getMultiFundingRates(symbols), getMultiOpenInterest(symbols), getMultiLongShortRatio(symbols.map((s) => `${s}USDT`))]);
+  return { fundingRates: fr.status === "fulfilled" ? fr.value : [], openInterests: oi.status === "fulfilled" ? oi.value : [], longShortRatios: ls.status === "fulfilled" ? ls.value : [], fetchedAt: Date.now() };
 }
 
 // server/binanceService.ts
@@ -4388,7 +4427,7 @@ function classifyFearGreed(value) {
   if (value >= 25) return "\u6050\u60E7";
   return "\u6781\u5EA6\u6050\u60E7";
 }
-async function getFearGreedHistory(limit = 7) {
+async function getFearGreedHistory2(limit = 7) {
   try {
     const json2 = await getJson(`https://api.alternative.me/fng/?limit=${Math.max(1, limit)}`);
     return (json2?.data ?? []).map((item) => ({
@@ -5361,6 +5400,49 @@ ${tradeStatus}
     longShortRatio: publicProcedure.input(z2.object({ symbols: z2.array(z2.string()).optional() }).optional()).query(async ({ input }) => {
       const symbols = input?.symbols ?? ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"];
       return getMultiLongShortRatio(symbols);
+    })
+  }),
+  // ─── CoinGlass 多空面板（全量数据）──────────────────────────────────────────
+  coinGlass: router({
+    // 综合面板数据（多空比率 + 清算 + CVD + ETF + 恐贪）
+    panel: publicProcedure.query(async () => {
+      try {
+        return { success: true, data: await getCoinGlassPanelData() };
+      } catch (e) {
+        return { success: false, data: null, error: e.message };
+      }
+    }),
+    // 清算币种列表
+    liquidationCoins: publicProcedure.query(async () => {
+      try {
+        return { success: true, data: await getLiquidationCoinList() };
+      } catch (e) {
+        return { success: false, data: [], error: e.message };
+      }
+    }),
+    // 清算历史
+    liquidationHistory: publicProcedure.input(z2.object({ exchange: z2.string().default("Binance"), symbol: z2.string().default("BTCUSDT"), interval: z2.string().default("1h"), limit: z2.number().default(24) }).optional()).query(async ({ input }) => {
+      try {
+        return { success: true, data: await getLiquidationHistory(input?.exchange, input?.symbol, input?.interval, input?.limit) };
+      } catch (e) {
+        return { success: false, data: [], error: e.message };
+      }
+    }),
+    // CVD 历史
+    cvdHistory: publicProcedure.input(z2.object({ exchange: z2.string().default("Binance"), symbol: z2.string().default("BTCUSDT"), interval: z2.string().default("1h"), limit: z2.number().default(24) }).optional()).query(async ({ input }) => {
+      try {
+        return { success: true, data: await getCVDHistory(input?.exchange, input?.symbol, input?.interval, input?.limit) };
+      } catch (e) {
+        return { success: false, data: [], error: e.message };
+      }
+    }),
+    // BTC ETF 资金流
+    etfFlows: publicProcedure.input(z2.object({ limit: z2.number().default(30) }).optional()).query(async ({ input }) => {
+      try {
+        return { success: true, data: await getBTCETFFlows(input?.limit) };
+      } catch (e) {
+        return { success: false, data: [], error: e.message };
+      }
     })
   }),
   // ─── ValueScan 链上数据 & 资金流 ─────────────────────────────────────────────
@@ -6336,7 +6418,7 @@ ${tradeStatus}
     // 恐惧贪婪指数历史（7天）
     fearGreedHistory: publicProcedure.input(z2.object({ limit: z2.number().default(7) }).optional()).query(async ({ input }) => {
       try {
-        return { success: true, data: await getFearGreedHistory(input?.limit ?? 7) };
+        return { success: true, data: await getFearGreedHistory2(input?.limit ?? 7) };
       } catch (e) {
         return { success: false, data: [], error: e.message };
       }
@@ -6415,7 +6497,7 @@ ${tradeStatus}
       const okxInstId = `${cgSymbol}-USDT-SWAP`;
       try {
         const [fngList, globalMkt, cgFundingRates, cgOI, okxLS, okxTaker, techData, newsData] = await Promise.allSettled([
-          getFearGreedHistory(1),
+          getFearGreedHistory2(1),
           getGlobalMarket(),
           getMultiFundingRates([cgSymbol]),
           getMultiOpenInterest([cgSymbol]),

@@ -1,196 +1,214 @@
-import { ENV } from "./_core/env";
+/**
+ * CoinGlass API v4 Service
+ * 使用 open-api-v4.coinglass.com 端点（已验证可用）
+ */
 
-const COINGLASS_BASE = "https://open-api-v3.coinglass.com/api";
+const COINGLASS_BASE_V4 = "https://open-api-v4.coinglass.com";
+const CG_API_KEY = process.env.COINGLASS_API_KEY ?? "9b35573cdb9d49d68c49c2b462c350e6";
 
-async function cgFetch(path: string): Promise<any> {
-  const res = await fetch(`${COINGLASS_BASE}${path}`, {
-    headers: { "CG-API-KEY": ENV.coinGlassApiKey },
-  });
-  if (!res.ok) throw new Error(`CoinGlass API error: ${res.status}`);
-  const json = await res.json();
-  if (json.code !== "0" && json.success !== true) {
-    throw new Error(`CoinGlass error: ${json.msg || "unknown"}`);
+async function cgFetchV4(path: string, params: Record<string, string | number> = {}): Promise<any> {
+  const url = new URL(`${COINGLASS_BASE_V4}${path}`);
+  for (const [k, v] of Object.entries(params)) {
+    url.searchParams.set(k, String(v));
   }
+  const res = await fetch(url.toString(), {
+    headers: { "CG-API-KEY": CG_API_KEY, "accept": "application/json" },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!res.ok) throw new Error(`CoinGlass API error: ${res.status} ${url.pathname}`);
+  const json = await res.json();
+  if (json.code !== "0") throw new Error(`CoinGlass error: ${json.msg || "unknown"} (code=${json.code})`);
   return json.data;
 }
 
-// ─── 资金费率类型（API 返回每个币种的对象，包含各交易所列表）──────────────────
-export interface FundingRateItem {
-  exchange: string;
-  fundingRate: number;
-  nextFundingTime: number;
-  fundingIntervalHours: number;
+// ─── 多空比率 ──────────────────────────────────────────────────────────────────
+export interface GlobalLongShortRatio {
+  time: number;
+  global_account_long_percent: number;
+  global_account_short_percent: number;
+  global_account_long_short_ratio: number;
+}
+export interface TopAccountRatio {
+  time: number;
+  top_account_long_percent: number;
+  top_account_short_percent: number;
+  top_account_long_short_ratio: number;
+}
+export interface TopPositionRatio {
+  time: number;
+  top_position_long_percent: number;
+  top_position_short_percent: number;
+  top_position_long_short_ratio: number;
 }
 
-export interface FundingRateData {
+export async function getGlobalLongShortRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<GlobalLongShortRatio[]> {
+  return cgFetchV4("/api/futures/global-long-short-account-ratio/history", { exchange, symbol, interval, limit });
+}
+export async function getTopAccountRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<TopAccountRatio[]> {
+  return cgFetchV4("/api/futures/top-long-short-account-ratio/history", { exchange, symbol, interval, limit });
+}
+export async function getTopPositionRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<TopPositionRatio[]> {
+  return cgFetchV4("/api/futures/top-long-short-position-ratio/history", { exchange, symbol, interval, limit });
+}
+
+// ─── 清算 ──────────────────────────────────────────────────────────────────────
+export interface LiquidationCoin {
   symbol: string;
-  usdtOrUsdMarginList: FundingRateItem[];
-  coinMarginList?: FundingRateItem[];
+  liquidation_usd_24h: number;
+  long_liquidation_usd_24h: number;
+  short_liquidation_usd_24h: number;
+  liquidation_usd_12h: number;
+  long_liquidation_usd_12h: number;
+  short_liquidation_usd_12h: number;
+  liquidation_usd_1h?: number;
+  long_liquidation_usd_1h?: number;
+  short_liquidation_usd_1h?: number;
+}
+export interface LiquidationHistory {
+  time: number;
+  long_liquidation_usd: number;
+  short_liquidation_usd: number;
 }
 
-// ─── 获取所有币种资金费率（API 返回 FundingRateData 数组）─────────────────────
-export async function getAllFundingRates(): Promise<FundingRateData[]> {
-  const data = await cgFetch(`/futures/fundingRate/exchange-list?symbol=BTC`);
-  if (Array.isArray(data)) return data as FundingRateData[];
-  return [data as FundingRateData];
+export async function getLiquidationCoinList(): Promise<LiquidationCoin[]> {
+  return cgFetchV4("/api/futures/liquidation/coin-list");
+}
+export async function getLiquidationHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<LiquidationHistory[]> {
+  return cgFetchV4("/api/futures/liquidation/history", { exchange, symbol, interval, limit });
 }
 
-// ─── 获取指定币种资金费率 ──────────────────────────────────────────────────────
-export async function getFundingRates(symbol: string = "BTC"): Promise<FundingRateData> {
-  const all = await getAllFundingRates();
-  const found = all.find(d => d.symbol === symbol.toUpperCase());
-  if (found) return found;
-  return { symbol: symbol.toUpperCase(), usdtOrUsdMarginList: [] };
+// ─── CVD ───────────────────────────────────────────────────────────────────────
+export interface CVDHistory {
+  time: number;
+  buy_volume_usd: number;
+  sell_volume_usd: number;
+  buy_volume: number;
+  sell_volume: number;
+}
+export async function getCVDHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<CVDHistory[]> {
+  return cgFetchV4("/api/futures/taker-buy-sell-volume/history", { exchange, symbol, interval, limit });
 }
 
-// ─── 获取多个币种资金费率 ──────────────────────────────────────────────────────
-export async function getMultiFundingRates(symbols: string[] = ["BTC", "ETH", "SOL", "BNB", "XRP"]): Promise<FundingRateData[]> {
-  const all = await getAllFundingRates();
-  const upperSymbols = symbols.map(s => s.toUpperCase());
-  return all.filter(d => upperSymbols.includes(d.symbol));
-}
-
-// ─── 持仓量类型（API 返回扁平数组，每条记录是一个交易所的数据）────────────────
-export interface OpenInterestRecord {
-  exchange: string;
-  symbol: string;
-  openInterest: number;
-  openInterestAmount: number;
-  openInterestByCoinMargin?: number;
-  openInterestByStableCoinMargin?: number;
-  openInterestChangePercent5m?: number;
-  openInterestChangePercent15m?: number;
-  openInterestChangePercent30m?: number;
-  openInterestChangePercent1h?: number;
-  openInterestChangePercent4h?: number;
-  openInterestChangePercent24h?: number;
-}
-
-// ─── 聚合后的持仓量数据（按币种分组）─────────────────────────────────────────
-export interface OpenInterestData {
-  symbol: string;
-  total: number;
-  totalAmount: number;
-  changePercent1h: number;
-  changePercent4h: number;
-  changePercent24h: number;
-  exchanges: OpenInterestRecord[];
-}
-
-// ─── 获取所有币种持仓量（API 返回扁平数组）────────────────────────────────────
-export async function getAllOpenInterestRaw(): Promise<OpenInterestRecord[]> {
-  const data = await cgFetch(`/futures/openInterest/exchange-list?symbol=BTC`);
-  if (Array.isArray(data)) return data as OpenInterestRecord[];
-  return [data as OpenInterestRecord];
-}
-
-// ─── 获取指定币种持仓量（聚合各交易所数据）────────────────────────────────────
-export async function getOpenInterest(symbol: string = "BTC"): Promise<OpenInterestData> {
-  const all = await getAllOpenInterestRaw();
-  const sym = symbol.toUpperCase();
-  const records = all.filter(r => r.symbol === sym);
-  const allRecord = records.find(r => r.exchange === "All");
-  return {
-    symbol: sym,
-    total: allRecord?.openInterest ?? records.reduce((s, r) => s + (r.openInterest || 0), 0),
-    totalAmount: allRecord?.openInterestAmount ?? 0,
-    changePercent1h: allRecord?.openInterestChangePercent1h ?? 0,
-    changePercent4h: allRecord?.openInterestChangePercent4h ?? 0,
-    changePercent24h: allRecord?.openInterestChangePercent24h ?? 0,
-    exchanges: records.filter(r => r.exchange !== "All"),
-  };
-}
-
-// ─── 获取多个币种持仓量 ────────────────────────────────────────────────────────
-export async function getMultiOpenInterest(symbols: string[] = ["BTC", "ETH", "SOL", "BNB", "XRP"]): Promise<OpenInterestData[]> {
-  const all = await getAllOpenInterestRaw();
-  const upperSymbols = symbols.map(s => s.toUpperCase());
-  const grouped = new Map<string, OpenInterestRecord[]>();
-  for (const r of all) {
-    if (upperSymbols.includes(r.symbol)) {
-      if (!grouped.has(r.symbol)) grouped.set(r.symbol, []);
-      grouped.get(r.symbol)!.push(r);
-    }
-  }
-  return upperSymbols
-    .filter(s => grouped.has(s))
-    .map(s => {
-      const records = grouped.get(s)!;
-      const allRecord = records.find(r => r.exchange === "All");
-      return {
-        symbol: s,
-        total: allRecord?.openInterest ?? records.reduce((sum, r) => sum + (r.openInterest || 0), 0),
-        totalAmount: allRecord?.openInterestAmount ?? 0,
-        changePercent1h: allRecord?.openInterestChangePercent1h ?? 0,
-        changePercent4h: allRecord?.openInterestChangePercent4h ?? 0,
-        changePercent24h: allRecord?.openInterestChangePercent24h ?? 0,
-        exchanges: records.filter(r => r.exchange !== "All"),
-      };
-    });
-}
-
-// ─── 从 Binance 获取多空比例（免费，但可能受 IP 限制）────────────────────────
-export interface LongShortRatio {
-  symbol: string;
-  longShortRatio: number;
-  longAccount: number;
-  shortAccount: number;
+// ─── BTC ETF ───────────────────────────────────────────────────────────────────
+export interface BTCETFFlow {
   timestamp: number;
+  flow_usd: number;
+  price_usd: number;
+  etf_flows?: Array<{ etf_ticker: string; flow_usd: number }>;
+}
+export async function getBTCETFFlows(limit = 30): Promise<BTCETFFlow[]> {
+  return cgFetchV4("/api/etf/bitcoin/flow-history", { limit });
 }
 
-export async function getLongShortRatio(symbol: string = "BTCUSDT"): Promise<LongShortRatio | null> {
-  try {
-    const res = await fetch(
-      `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`,
-      { signal: AbortSignal.timeout(8000) }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) return null;
-    const latest = data[0];
-    return {
-      symbol,
-      longShortRatio: parseFloat(latest.longShortRatio),
-      longAccount: parseFloat(latest.longAccount),
-      shortAccount: parseFloat(latest.shortAccount),
-      timestamp: latest.timestamp,
-    };
-  } catch {
-    return null;
-  }
+// ─── 恐贪指数 ──────────────────────────────────────────────────────────────────
+export interface FearGreedData { data_list: number[]; time_list: number[] }
+export async function getFearGreedHistory(limit = 30): Promise<FearGreedData> {
+  return cgFetchV4("/api/index/fear-greed-history", { limit });
 }
 
-// ─── 获取多个币种的多空比例 ────────────────────────────────────────────────────
-export async function getMultiLongShortRatio(
-  symbols: string[] = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
-): Promise<LongShortRatio[]> {
-  const results = await Promise.allSettled(symbols.map(s => getLongShortRatio(s)));
-  return results
-    .filter((r): r is PromiseFulfilledResult<LongShortRatio | null> => r.status === "fulfilled" && r.value !== null)
-    .map(r => r.value as LongShortRatio);
-}
-
-// ─── 综合市场数据（用于市场全景仪表盘）──────────────────────────────────────
-export interface MarketOverviewData {
-  fundingRates: FundingRateData[];
-  openInterests: OpenInterestData[];
-  longShortRatios: LongShortRatio[];
+// ─── 综合面板数据 ──────────────────────────────────────────────────────────────
+export interface CoinGlassPanelData {
+  globalLongShort: { longPercent: number; shortPercent: number; ratio: number; history: GlobalLongShortRatio[] } | null;
+  topAccountRatio: { longPercent: number; shortPercent: number; ratio: number; history: TopAccountRatio[] } | null;
+  topPositionRatio: { longPercent: number; shortPercent: number; ratio: number; history: TopPositionRatio[] } | null;
+  liquidationCoins: LiquidationCoin[];
+  liquidationHistory: LiquidationHistory[];
+  cvdHistory: CVDHistory[];
+  etfFlows: BTCETFFlow[];
+  fearGreed: { current: number; history: number[]; timeList: number[] } | null;
   fetchedAt: number;
 }
 
-export async function getMarketOverview(
-  symbols: string[] = ["BTC", "ETH", "SOL", "BNB", "XRP"]
-): Promise<MarketOverviewData> {
-  const [fundingRates, openInterests, longShortRatios] = await Promise.allSettled([
-    getMultiFundingRates(symbols),
-    getMultiOpenInterest(symbols),
-    getMultiLongShortRatio(symbols.map(s => `${s}USDT`)),
+export async function getCoinGlassPanelData(): Promise<CoinGlassPanelData> {
+  const [globalLS, topAccount, topPosition, liqCoins, liqHistory, cvd, etf, fg] = await Promise.allSettled([
+    getGlobalLongShortRatio("Binance", "BTCUSDT", "1h", 24),
+    getTopAccountRatio("Binance", "BTCUSDT", "1h", 24),
+    getTopPositionRatio("Binance", "BTCUSDT", "1h", 24),
+    getLiquidationCoinList(),
+    getLiquidationHistory("Binance", "BTCUSDT", "1h", 24),
+    getCVDHistory("Binance", "BTCUSDT", "1h", 24),
+    getBTCETFFlows(30),
+    getFearGreedHistory(30),
   ]);
-
+  const latest = (arr: any[] | null) => arr && arr.length > 0 ? arr[arr.length - 1] : null;
+  const globalLSData = globalLS.status === "fulfilled" ? globalLS.value : null;
+  const topAccountData = topAccount.status === "fulfilled" ? topAccount.value : null;
+  const topPositionData = topPosition.status === "fulfilled" ? topPosition.value : null;
   return {
-    fundingRates: fundingRates.status === "fulfilled" ? fundingRates.value : [],
-    openInterests: openInterests.status === "fulfilled" ? openInterests.value : [],
-    longShortRatios: longShortRatios.status === "fulfilled" ? longShortRatios.value : [],
+    globalLongShort: globalLSData ? {
+      longPercent: latest(globalLSData)?.global_account_long_percent ?? 0,
+      shortPercent: latest(globalLSData)?.global_account_short_percent ?? 0,
+      ratio: latest(globalLSData)?.global_account_long_short_ratio ?? 1,
+      history: globalLSData,
+    } : null,
+    topAccountRatio: topAccountData ? {
+      longPercent: latest(topAccountData)?.top_account_long_percent ?? 0,
+      shortPercent: latest(topAccountData)?.top_account_short_percent ?? 0,
+      ratio: latest(topAccountData)?.top_account_long_short_ratio ?? 1,
+      history: topAccountData,
+    } : null,
+    topPositionRatio: topPositionData ? {
+      longPercent: latest(topPositionData)?.top_position_long_percent ?? 0,
+      shortPercent: latest(topPositionData)?.top_position_short_percent ?? 0,
+      ratio: latest(topPositionData)?.top_position_long_short_ratio ?? 1,
+      history: topPositionData,
+    } : null,
+    liquidationCoins: liqCoins.status === "fulfilled" ? liqCoins.value.slice(0, 20) : [],
+    liquidationHistory: liqHistory.status === "fulfilled" ? liqHistory.value : [],
+    cvdHistory: cvd.status === "fulfilled" ? cvd.value : [],
+    etfFlows: etf.status === "fulfilled" ? etf.value : [],
+    fearGreed: fg.status === "fulfilled" ? {
+      current: fg.value.data_list[fg.value.data_list.length - 1] ?? 50,
+      history: fg.value.data_list,
+      timeList: fg.value.time_list,
+    } : null,
     fetchedAt: Date.now(),
   };
+}
+
+// ─── 兼容旧接口（保持向后兼容）────────────────────────────────────────────────
+export interface FundingRateItem { exchange: string; fundingRate: number; nextFundingTime: number; fundingIntervalHours: number }
+export interface FundingRateData { symbol: string; usdtOrUsdMarginList: FundingRateItem[]; coinMarginList?: FundingRateItem[] }
+export interface OpenInterestData { symbol: string; total: number; totalAmount: number; changePercent1h: number; changePercent4h: number; changePercent24h: number; exchanges: any[] }
+export interface LongShortRatio { symbol: string; longShortRatio: number; longAccount: number; shortAccount: number; timestamp: number }
+export interface MarketOverviewData { fundingRates: FundingRateData[]; openInterests: OpenInterestData[]; longShortRatios: LongShortRatio[]; fetchedAt: number }
+export interface OpenInterestRecord { exchange: string; symbol: string; openInterest: number; openInterestAmount: number }
+
+export async function getLongShortRatio(symbol = "BTCUSDT"): Promise<LongShortRatio | null> {
+  try {
+    const res = await fetch(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const l = data[0];
+    return { symbol, longShortRatio: parseFloat(l.longShortRatio), longAccount: parseFloat(l.longAccount), shortAccount: parseFloat(l.shortAccount), timestamp: l.timestamp };
+  } catch { return null; }
+}
+export async function getMultiLongShortRatio(symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]): Promise<LongShortRatio[]> {
+  const results = await Promise.allSettled(symbols.map(s => getLongShortRatio(s)));
+  return results.filter((r): r is PromiseFulfilledResult<LongShortRatio | null> => r.status === "fulfilled" && r.value !== null).map(r => r.value as LongShortRatio);
+}
+export async function getMultiFundingRates(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]): Promise<FundingRateData[]> {
+  try {
+    const res = await fetch("https://fapi.binance.com/fapi/v1/premiumIndex", { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const data: any[] = await res.json();
+    return symbols.map(sym => {
+      const item = data.find(d => d.symbol === `${sym}USDT`);
+      return { symbol: sym, usdtOrUsdMarginList: item ? [{ exchange: "Binance", fundingRate: parseFloat(item.lastFundingRate) * 100, nextFundingTime: item.nextFundingTime, fundingIntervalHours: 8 }] : [] };
+    });
+  } catch { return []; }
+}
+export async function getMultiOpenInterest(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]): Promise<OpenInterestData[]> {
+  const results = await Promise.allSettled(symbols.map(async sym => {
+    const res = await fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${sym}USDT`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const d = await res.json();
+    return { symbol: sym, total: parseFloat(d.openInterest), totalAmount: 0, changePercent1h: 0, changePercent4h: 0, changePercent24h: 0, exchanges: [] } as OpenInterestData;
+  }));
+  return results.filter((r): r is PromiseFulfilledResult<OpenInterestData | null> => r.status === "fulfilled" && r.value !== null).map(r => r.value as OpenInterestData);
+}
+export async function getMarketOverview(symbols = ["BTC", "ETH", "SOL", "BNB", "XRP"]): Promise<MarketOverviewData> {
+  const [fr, oi, ls] = await Promise.allSettled([getMultiFundingRates(symbols), getMultiOpenInterest(symbols), getMultiLongShortRatio(symbols.map(s => `${s}USDT`))]);
+  return { fundingRates: fr.status === "fulfilled" ? fr.value : [], openInterests: oi.status === "fulfilled" ? oi.value : [], longShortRatios: ls.status === "fulfilled" ? ls.value : [], fetchedAt: Date.now() };
 }

@@ -34,7 +34,7 @@ import {
 import { saveVSLoginCredentials, loadVSLoginCredentials } from "./db";
 import { getNewsSentiment, getCoinNewsSentiment } from "./newsService";
 import { TRPCError } from "@trpc/server";
-import { getMarketOverview, getMultiFundingRates, getMultiOpenInterest, getMultiLongShortRatio } from "./coinGlassService";
+import { getMarketOverview, getMultiFundingRates, getMultiOpenInterest, getMultiLongShortRatio, getCoinGlassPanelData, getLiquidationCoinList, getLiquidationHistory, getCVDHistory, getBTCETFFlows } from "./coinGlassService";
 import { createBinanceService } from "./binanceService";
 import { createOKXService } from "./okxService";
 import { createBybitService } from "./bybitService";
@@ -951,6 +951,58 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const symbols = input?.symbols ?? ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"];
         return getMultiLongShortRatio(symbols);
+      }),
+  }),
+
+  // ─── CoinGlass 多空面板（全量数据）──────────────────────────────────────────
+  coinGlass: router({
+    // 综合面板数据（多空比率 + 清算 + CVD + ETF + 恐贪）
+    panel: publicProcedure
+      .query(async () => {
+        try {
+          return { success: true, data: await getCoinGlassPanelData() };
+        } catch (e: any) {
+          return { success: false, data: null, error: e.message };
+        }
+      }),
+    // 清算币种列表
+    liquidationCoins: publicProcedure
+      .query(async () => {
+        try {
+          return { success: true, data: await getLiquidationCoinList() };
+        } catch (e: any) {
+          return { success: false, data: [], error: e.message };
+        }
+      }),
+    // 清算历史
+    liquidationHistory: publicProcedure
+      .input(z.object({ exchange: z.string().default("Binance"), symbol: z.string().default("BTCUSDT"), interval: z.string().default("1h"), limit: z.number().default(24) }).optional())
+      .query(async ({ input }) => {
+        try {
+          return { success: true, data: await getLiquidationHistory(input?.exchange, input?.symbol, input?.interval, input?.limit) };
+        } catch (e: any) {
+          return { success: false, data: [], error: e.message };
+        }
+      }),
+    // CVD 历史
+    cvdHistory: publicProcedure
+      .input(z.object({ exchange: z.string().default("Binance"), symbol: z.string().default("BTCUSDT"), interval: z.string().default("1h"), limit: z.number().default(24) }).optional())
+      .query(async ({ input }) => {
+        try {
+          return { success: true, data: await getCVDHistory(input?.exchange, input?.symbol, input?.interval, input?.limit) };
+        } catch (e: any) {
+          return { success: false, data: [], error: e.message };
+        }
+      }),
+    // BTC ETF 资金流
+    etfFlows: publicProcedure
+      .input(z.object({ limit: z.number().default(30) }).optional())
+      .query(async ({ input }) => {
+        try {
+          return { success: true, data: await getBTCETFFlows(input?.limit) };
+        } catch (e: any) {
+          return { success: false, data: [], error: e.message };
+        }
       }),
   }),
   // ─── ValueScan 链上数据 & 资金流 ─────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { Link, Route, Switch, useLocation } from "wouter";
 import {
   BarChart3,
+  BarChart2,
   BrainCircuit,
   CandlestickChart,
   Command,
@@ -42,6 +43,7 @@ import SettingsPage from "@/pages/Settings";
 import ComponentShowcase from "@/pages/ComponentShowcase";
 import SignalResonance from "@/pages/SignalResonance";
 import VSDataPanel from "@/pages/VSDataPanel";
+import CoinGlassPanel from "@/pages/CoinGlassPanel";
 import NotFound from "@/pages/NotFound";
 
 type NavItem = {
@@ -64,6 +66,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
       {
         title: "市场面板",
         items: [
+          { href: "/coinglass", label: "CoinGlass 多空", icon: BarChart2 },
           { href: "/bull-bear", label: "多空面板", icon: TrendingUp },
           { href: "/long-short", label: "多空比", icon: Gauge },
           { href: "/whale-cost", label: "巨鲸成本", icon: Database },
@@ -159,6 +162,7 @@ export default function App() {
           <Route path="/signals" component={VSSignals} />
           <Route path="/signal-resonance" component={SignalResonance} />
           <Route path="/vs-data-panel" component={VSDataPanel} />
+          <Route path="/coinglass" component={CoinGlassPanel} />
           <Route path="/bull-bear" component={BullBearPanel} />
           <Route path="/long-short" component={LongShortPanel} />
           <Route path="/whale-cost" component={WhaleCost} />
