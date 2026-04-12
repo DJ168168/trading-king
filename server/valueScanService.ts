@@ -660,12 +660,14 @@ export async function getOpenBtcDenseArea(vsTokenId = 1) {
   } catch (e: any) { return { success: false, data: [], msg: e.message }; }
 }
 
-export async function getOpenPriceMarketList(vsTokenId = 1) {
+export async function getOpenPriceMarketList(vsTokenId = 1, limit = 100) {
   try {
     const endTime = Date.now();
     const json = await requestOpenApi("/open/v1/indicator/getPriceMarketList", { vsTokenId, endTime });
-    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
-  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+    const raw = json?.data ?? [];
+    const data = Array.isArray(raw) ? raw.slice(0, limit) : raw;
+    return { success: true, data, total: Array.isArray(raw) ? raw.length : 0, msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], total: 0, msg: e.message }; }
 }
 
 export async function getOpenAiAnalyseList(vsTokenId = 1) {
