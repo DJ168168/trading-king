@@ -26,6 +26,10 @@ import {
   getTokenList, getCoinSocialSentiment,
   getWarnMessageWithToken,
   loginValueScan, startAutoRefreshTimer, stopAutoRefreshTimer,
+  getOpenChanceCoinList, getOpenRiskCoinList, getOpenFundsCoinList,
+  getOpenBtcDenseArea, getOpenPriceMarketList, getOpenAiAnalyseList,
+  getOpenLargeTradeList, getOpenCoinTrade, getOpenSocialSentiment,
+  getOpenChanceCoinMessages, getOpenRiskCoinMessages, getOpenFundsCoinMessages,
 } from "./valueScanService";
 import { saveVSLoginCredentials, loadVSLoginCredentials } from "./db";
 import { getNewsSentiment, getCoinNewsSentiment } from "./newsService";
@@ -811,6 +815,39 @@ export const appRouter = router({
       await updateStrategyConfig(cfg.id, { vsApiKey: null, vsSecretKey: null } as any);
       return { success: true };
     }),
+  }),
+  // ─── ValueScan Open API 数据面板 ─────────────────────────────────────────────
+  vsOpenApi: router({
+    chanceCoinList: publicProcedure.query(async () => getOpenChanceCoinList()),
+    riskCoinList: publicProcedure.query(async () => getOpenRiskCoinList()),
+    fundsCoinList: publicProcedure.query(async () => getOpenFundsCoinList()),
+    btcDenseArea: publicProcedure
+      .input(z.object({ vsTokenId: z.number().default(1) }).optional())
+      .query(async ({ input }) => getOpenBtcDenseArea(input?.vsTokenId ?? 1)),
+    priceMarketList: publicProcedure
+      .input(z.object({ vsTokenId: z.number().default(1) }).optional())
+      .query(async ({ input }) => getOpenPriceMarketList(input?.vsTokenId ?? 1)),
+    aiAnalyseList: publicProcedure
+      .input(z.object({ vsTokenId: z.number().default(1) }).optional())
+      .query(async ({ input }) => getOpenAiAnalyseList(input?.vsTokenId ?? 1)),
+    largeTradeList: publicProcedure
+      .input(z.object({ vsTokenId: z.number().default(1) }).optional())
+      .query(async ({ input }) => getOpenLargeTradeList(input?.vsTokenId ?? 1)),
+    coinTrade: publicProcedure
+      .input(z.object({ vsTokenId: z.number().default(1) }).optional())
+      .query(async ({ input }) => getOpenCoinTrade(input?.vsTokenId ?? 1)),
+    socialSentiment: publicProcedure
+      .input(z.object({ symbol: z.string().default("BTC") }).optional())
+      .query(async ({ input }) => getOpenSocialSentiment(input?.symbol ?? "BTC")),
+    chanceCoinMessages: publicProcedure
+      .input(z.object({ vsTokenId: z.number(), symbol: z.string().default("") }))
+      .query(async ({ input }) => getOpenChanceCoinMessages(input.vsTokenId, input.symbol)),
+    riskCoinMessages: publicProcedure
+      .input(z.object({ vsTokenId: z.number(), symbol: z.string().default("") }))
+      .query(async ({ input }) => getOpenRiskCoinMessages(input.vsTokenId, input.symbol)),
+    fundsCoinMessages: publicProcedure
+      .input(z.object({ vsTokenId: z.number(), symbol: z.string().default("") }))
+      .query(async ({ input }) => getOpenFundsCoinMessages(input.vsTokenId, input.symbol)),
   }),
   // ─── 市场价格（通过 Binance 公开 API））─────────────────────────────────────
   market: router({

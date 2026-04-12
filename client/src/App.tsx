@@ -7,6 +7,7 @@ import {
   Database,
   Gauge,
   LayoutDashboard,
+  Layers,
   Newspaper,
   Radar,
   Settings,
@@ -40,6 +41,7 @@ import Charts from "@/pages/Charts";
 import SettingsPage from "@/pages/Settings";
 import ComponentShowcase from "@/pages/ComponentShowcase";
 import SignalResonance from "@/pages/SignalResonance";
+import VSDataPanel from "@/pages/VSDataPanel";
 import NotFound from "@/pages/NotFound";
 
 type NavItem = {
@@ -56,6 +58,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
       { href: "/resonance-engine", label: "共振引擎", icon: Radar },
       { href: "/signals", label: "VS 信号", icon: Waves },
       { href: "/signal-resonance", label: "信号共振", icon: BrainCircuit },
+      { href: "/vs-data-panel", label: "VS 数据面板", icon: Layers },
     ],
   },
       {
@@ -155,6 +158,7 @@ export default function App() {
           <Route path="/resonance-engine" component={ResonanceEngine} />
           <Route path="/signals" component={VSSignals} />
           <Route path="/signal-resonance" component={SignalResonance} />
+          <Route path="/vs-data-panel" component={VSDataPanel} />
           <Route path="/bull-bear" component={BullBearPanel} />
           <Route path="/long-short" component={LongShortPanel} />
           <Route path="/whale-cost" component={WhaleCost} />

@@ -602,3 +602,118 @@ export async function bootstrapValueScanService() {
 
   return bootstrapPromise;
 }
+
+// ─── ValueScan Open API（HMAC-SHA256 签名）──────────────────────────────────
+import { createHmac } from "crypto";
+
+const OPEN_API_BASE = "https://api.valuescan.io";
+
+async function requestOpenApi(path: string, body: Record<string, any> = {}): Promise<any> {
+  const { apiKey, secretKey } = await getVsCredentials();
+  if (!apiKey) throw new Error("未配置 ValueScan API Key");
+  const rawBody = JSON.stringify(body);
+  const timestamp = String(Date.now());
+  const sign = createHmac("sha256", secretKey || "")
+    .update(timestamp + rawBody)
+    .digest("hex");
+  const url = `${OPEN_API_BASE}${path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "X-API-KEY": apiKey,
+      "X-TIMESTAMP": timestamp,
+      "X-SIGN": sign,
+    },
+    body: rawBody,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function getOpenChanceCoinList() {
+  try {
+    const json = await requestOpenApi("/open/v1/ai/getChanceCoinList", {});
+    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+}
+
+export async function getOpenRiskCoinList() {
+  try {
+    const json = await requestOpenApi("/open/v1/ai/getRiskCoinList", {});
+    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+}
+
+export async function getOpenFundsCoinList() {
+  try {
+    const json = await requestOpenApi("/open/v1/ai/getFundsCoinList", {});
+    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+}
+
+export async function getOpenBtcDenseArea(vsTokenId = 1) {
+  try {
+    const json = await requestOpenApi("/open/v1/indicator/getDenseAreaList", { vsTokenId });
+    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+}
+
+export async function getOpenPriceMarketList(vsTokenId = 1) {
+  try {
+    const endTime = Date.now();
+    const json = await requestOpenApi("/open/v1/indicator/getPriceMarketList", { vsTokenId, endTime });
+    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+}
+
+export async function getOpenAiAnalyseList(vsTokenId = 1) {
+  try {
+    const json = await requestOpenApi("/open/v1/ai/getAiTokenAnalyseResultList", { vsTokenId });
+    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+}
+
+export async function getOpenLargeTradeList(vsTokenId = 1) {
+  try {
+    const json = await requestOpenApi("/open/v1/chain/trade/large", { vsTokenId });
+    return { success: true, data: json?.data ?? [], msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], msg: e.message }; }
+}
+
+export async function getOpenCoinTrade(vsTokenId = 1) {
+  try {
+    const json = await requestOpenApi("/open/v1/trade/getCoinTrade", { vsTokenId });
+    return { success: true, data: json?.data ?? null, msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: null, msg: e.message }; }
+}
+
+export async function getOpenSocialSentiment(symbol = "BTC") {
+  try {
+    const normalized = symbol.replace(/USDT$/i, "").toUpperCase();
+    const json = await requestOpenApi("/open/v1/social-sentiment/getCoinSocialSentiment", { symbol: normalized });
+    return { success: true, data: json?.data ?? null, msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: null, msg: e.message }; }
+}
+
+export async function getOpenChanceCoinMessages(vsTokenId: number, symbol = "") {
+  try {
+    const json = await requestOpenApi("/open/v1/ai/getChanceCoinMessageList", { vsTokenId });
+    return { success: true, data: json?.data ?? [], symbol, msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], symbol, msg: e.message }; }
+}
+
+export async function getOpenRiskCoinMessages(vsTokenId: number, symbol = "") {
+  try {
+    const json = await requestOpenApi("/open/v1/ai/getRiskCoinMessageList", { vsTokenId });
+    return { success: true, data: json?.data ?? [], symbol, msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], symbol, msg: e.message }; }
+}
+
+export async function getOpenFundsCoinMessages(vsTokenId: number, symbol = "") {
+  try {
+    const json = await requestOpenApi("/open/v1/ai/getFundsCoinMessageList", { vsTokenId });
+    return { success: true, data: json?.data ?? [], symbol, msg: json?.message ?? "ok" };
+  } catch (e: any) { return { success: false, data: [], symbol, msg: e.message }; }
+}
