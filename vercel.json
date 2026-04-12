@@ -24,6 +24,10 @@
       "destination": "/api/runtime"
     },
     {
+      "source": "/trpc/(.*)",
+      "destination": "/api/runtime"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
