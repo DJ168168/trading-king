@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpLink } from "@trpc/client";
+import superjson from "superjson";
 import { Toaster } from "@/components/ui/sonner";
 import App from "./App";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -25,6 +26,7 @@ const trpcClient = trpc.createClient({
   links: [
     httpLink({
       url: "/api/trpc",
+      transformer: superjson,
       fetch(url, options) {
         return fetch(url, {
           ...options,
