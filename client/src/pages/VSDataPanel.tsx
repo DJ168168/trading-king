@@ -300,8 +300,24 @@ export default function VSDataPanel() {
     );
   };
 
+  // 调试信息
+  const debugInfo = {
+    chanceLoading: chanceListQ.isLoading,
+    chanceError: chanceListQ.isError,
+    chanceDataType: typeof chanceListQ.data,
+    chanceDataKeys: chanceListQ.data ? Object.keys(chanceListQ.data as any).join(',') : 'null',
+    chanceListLen: chanceList.length,
+    chanceStatus: chanceListQ.status,
+  };
+
   return (
     <div className="space-y-5 p-4 lg:p-6">
+      {/* 调试面板 */}
+      <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 text-xs font-mono text-yellow-300">
+        <div>DEBUG: loading={String(debugInfo.chanceLoading)} error={String(debugInfo.chanceError)} status={debugInfo.chanceStatus}</div>
+        <div>data type={debugInfo.chanceDataType} keys={debugInfo.chanceDataKeys} listLen={debugInfo.chanceListLen}</div>
+        <div>raw data: {JSON.stringify(chanceListQ.data)?.slice(0, 200)}</div>
+      </div>
       {/* 页头 */}
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
