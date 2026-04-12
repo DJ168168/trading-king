@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚀 实盘量化终端 | TradingKing</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0B0F1C;color:#E6E9F0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+.container{max-width:960px;margin:0 auto;padding:20px}
+.header{text-align:center;padding:24px 0 16px}
+.header h1{font-size:26px;color:#00F0FF;letter-spacing:2px}
+.header p{color:#8892B0;font-size:13px;margin-top:6px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.card{background:#121A29;border-radius:16px;padding:20px;border:1px solid #1B2744}
+.card h3{font-size:13px;color:#8892B0;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.signal-box{text-align:center;padding:16px 0}
+.signal-text{font-size:36px;font-weight:700;letter-spacing:2px}
+.signal-text.long{color:#00FFB3}
+.signal-text.short{color:#FF4470}
+.signal-text.wait{color:#8892B0}
+.win-rate{font-size:48px;font-weight:700;color:#00F0FF;text-align:center;line-height:1}
+.win-label{text-align:center;color:#8892B0;font-size:13px;margin-top:4px}
+.score-bar{background:#1B2744;border-radius:8px;height:10px;margin-top:8px;overflow:hidden}
+.score-fill{height:100%;border-radius:8px;transition:width .5s}
+.score-fill.bull{background:linear-gradient(90deg,#00FFB3,#00F0FF)}
+.score-fill.bear{background:linear-gradient(90deg,#FF4470,#FF6B9D)}
+.score-fill.neutral{background:#8892B0}
+.status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.green{background:#00FFB3;box-shadow:0 0 8px #00FFB3}
+.status-dot.red{background:#FF4470;box-shadow:0 0 8px #FF4470}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1B2744;font-size:14px}
+.stat-row:last-child{border-bottom:none}
+.stat-val{font-weight:600;color:#00F0FF}
+.btn{padding:10px 24px;border-radius:10px;border:none;cursor:pointer;font-size:14px;font-weight:600;transition:all .2s}
+.btn-start{background:#00FFB3;color:#0B0F1C}
+.btn-stop{background:#FF4470;color:#fff}
+.btn:hover{opacity:.85;transform:scale(1.02)}
+.trade-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1B2744;font-size:13px}
+.trade-item:last-child{border-bottom:none}
+.badge{padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700}
+.badge.long{background:#00FFB340;color:#00FFB3;border:1px solid #00FFB360}
+.badge.short{background:#FF447040;color:#FF4470;border:1px solid #FF447060}
+.detail-text{font-size:11px;color:#8892B0;margin-top:8px;line-height:1.6}
+.refresh-info{text-align:center;color:#8892B040;font-size:11px;margin-top:16px}
+.full-card{margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>🚀 实盘量化终端</h1>
+    <p>TradingKing · Binance + OKX + Bybit · 三大交易所自动实盘</p>
+  </div>
+
+  <!-- 信号 + 胜率 -->
+  <div class="grid">
+    <div class="card">
+      <h3>📡 当前信号</h3>
+      <div class="signal-box">
+        <div class="signal-text wait" id="sigText">加载中...</div>
+        <div style="margin-top:8px;color:#8892B0;font-size:13px" id="sigStrategy"></div>
+      </div>
+      <div class="score-bar"><div class="score-fill neutral" id="scoreBar" style="width:50%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#8892B0;margin-top:4px">
+        <span>看空</span><span id="scoreVal">50</span><span>看多</span>
+      </div>
+      <div class="detail-text" id="sigDetail"></div>
+    </div>
+    <div class="card">
+      <h3>🎯 胜率评估</h3>
+      <div style="padding:12px 0">
+        <div class="win-rate" id="winRate">—</div>
+        <div class="win-label">综合胜率</div>
+      </div>
+      <div class="stat-row">
+        <span>恐贪指数</span><span class="stat-val" id="fgVal">—</span>
+      </div>
+      <div class="stat-row">
+        <span>策略</span><span class="stat-val" id="stratVal">多因子共振</span>
+      </div>
+      <div class="stat-row">
+        <span>止损</span><span class="stat-val" id="slVal">—</span>
+      </div>
+      <div class="stat-row">
+        <span>止盈</span><span class="stat-val" id="tpVal">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 系统状态 + 控制 -->
+  <div class="grid">
+    <div class="card">
+      <h3>⚙️ 系统状态</h3>
+      <div class="stat-row">
+        <span>运行状态</span>
+        <span id="runStatus"><span class="status-dot red"></span>加载中</span>
+      </div>
+      <div class="stat-row">
+        <span>今日交易</span><span class="stat-val" id="dailyTrades">—</span>
+      </div>
+      <div class="stat-row">
+        <span>风控状态</span><span class="stat-val" id="riskStatus">—</span>
+      </div>
+      <div class="stat-row">
+        <span>连续失败</span><span class="stat-val" id="failCount">—</span>
+      </div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between">
+      <h3>🎮 交易控制</h3>
+      <div style="text-align:center;padding:20px 0">
+        <button class="btn btn-start" id="toggleBtn" onclick="toggle()">启动交易</button>
+      </div>
+      <div style="font-size:12px;color:#8892B0;text-align:center">
+        胜率≥80% 才开单 · 每日最多5单<br>连续亏损2次自动暂停
+      </div>
+    </div>
+  </div>
+
+  <!-- 交易历史 -->
+  <div class="card full-card">
+    <h3>📋 最近交易记录</h3>
+    <div id="tradeLog" style="margin-top:8px">
+      <div style="text-align:center;color:#8892B0;padding:20px;font-size:13px">暂无交易记录</div>
+    </div>
+  </div>
+
+  <div class="refresh-info" id="refreshInfo">30秒自动刷新</div>
+</div>
+
+<script>
+const API = "http://47.239.72.211:3888";
+let countdown = 30;
+
+function fetchStatus() {
+  fetch(API + "/api/status")
+    .then(r => r.json())
+    .then(d => {
+      const running = d.run;
+      const dot = `<span class="status-dot ${running ? 'green' : 'red'}"></span>`;
+      document.getElementById("runStatus").innerHTML = dot + (running ? "运行中" : "已停止");
+      const btn = document.getElementById("toggleBtn");
+      btn.className = running ? "btn btn-stop" : "btn btn-start";
+      btn.innerText = running ? "停止交易" : "启动交易";
+      document.getElementById("dailyTrades").innerText = `${d.daily_trades || 0} / ${d.daily_max || 5}`;
+      document.getElementById("riskStatus").innerText = d.can_trade ? "✅ 允许开单" : "🔴 暂停中";
+      document.getElementById("failCount").innerText = d.consecutive_fails || 0;
+    })
+    .catch(() => {
+      document.getElementById("runStatus").innerHTML = '<span class="status-dot red"></span>连接失败';
+    });
+}
+
+function fetchSignal() {
+  fetch(API + "/api/best")
+    .then(r => r.json())
+    .then(d => {
+      const sig = d.signal || "WAIT";
+      const win = d.win || 0;
+      const score = d.score || 50;
+
+      const sigEl = document.getElementById("sigText");
+      sigEl.className = "signal-text " + (sig === "LONG" ? "long" : sig === "SHORT" ? "short" : "wait");
+      sigEl.innerText = sig === "LONG" ? "✅ 做多" : sig === "SHORT" ? "❌ 做空" : "⌛ 观望";
+
+      document.getElementById("sigStrategy").innerText = d.strategy || "";
+      document.getElementById("winRate").innerText = win > 0 ? win.toFixed(1) + "%" : "—";
+      document.getElementById("fgVal").innerText = d.fg !== undefined ? d.fg : "—";
+      document.getElementById("slVal").innerText = d.stop ? d.stop + "%" : "—";
+      document.getElementById("tpVal").innerText = d.take ? d.take + "%" : "—";
+      document.getElementById("sigDetail").innerText = d.detail || "";
+      document.getElementById("scoreVal").innerText = score;
+
+      const bar = document.getElementById("scoreBar");
+      bar.style.width = score + "%";
+      bar.className = "score-fill " + (score >= 60 ? "bull" : score <= 40 ? "bear" : "neutral");
+    })
+    .catch(() => {
+      document.getElementById("sigText").innerText = "API 离线";
+    });
+}
+
+function fetchHistory() {
+  fetch(API + "/api/history")
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById("tradeLog");
+      if (!data || data.length === 0) {
+        el.innerHTML = '<div style="text-align:center;color:#8892B0;padding:20px;font-size:13px">暂无交易记录</div>';
+        return;
+      }
+      const recent = data.slice(-10).reverse();
+      el.innerHTML = recent.map(i => `
+        <div class="trade-item">
+          <div>
+            <span class="badge ${i.side === 'LONG' ? 'long' : 'short'}">${i.side}</span>
+            <span style="margin-left:8px;font-weight:600">${i.sym}</span>
+            <span style="margin-left:6px;color:#8892B0;font-size:11px">${i.ex}</span>
+          </div>
+          <div style="text-align:right">
+            <div style="color:#00F0FF;font-size:12px">胜率 ${i.win}%</div>
+            <div style="color:#8892B0;font-size:11px">${i.time}</div>
+          </div>
+        </div>`).join("");
+    });
+}
+
+function toggle() {
+  fetch(API + "/api/toggle").then(r => r.json()).then(() => fetchStatus());
+}
+
+function refresh() {
+  fetchStatus();
+  fetchSignal();
+  fetchHistory();
+  countdown = 30;
+}
+
+// 倒计时刷新
+setInterval(() => {
+  countdown--;
+  document.getElementById("refreshInfo").innerText = `${countdown}秒后自动刷新`;
+  if (countdown <= 0) refresh();
+}, 1000);
+
+refresh();
+</script>
+</body>
+</html>

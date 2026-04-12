@@ -1,0 +1,65 @@
+name: Deploy Quant System to Aliyun
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'quant/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy quant system via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 47.239.72.211
+          username: root
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          command_timeout: 300s
+          script: |
+            set -e
+            mkdir -p /root/quant/logs /root/quant/vercel
+            echo "目录创建完成"
+
+      - name: Upload files via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 47.239.72.211
+          username: root
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          source: "quant/*"
+          target: "/root/"
+          strip_components: 0
+
+      - name: Start services
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 47.239.72.211
+          username: root
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          command_timeout: 300s
+          script: |
+            cd /root/quant
+            chmod +x start_trade.sh
+            pip3 install -q flask flask-cors requests python-dotenv ccxt
+            pkill -f "api_server.py" 2>/dev/null || true
+            pkill -f "strategy_engine.py" 2>/dev/null || true
+            pkill -f "vs_auto_token.py" 2>/dev/null || true
+            screen -X -S quant-api quit 2>/dev/null || true
+            screen -X -S quant-trade quit 2>/dev/null || true
+            screen -X -S vs_token quit 2>/dev/null || true
+            sleep 2
+            iptables -I INPUT -p tcp --dport 3888 -j ACCEPT 2>/dev/null || true
+            screen -dmS vs_token bash -c 'cd /root/quant && python3 vs_auto_token.py >> /root/quant/logs/vs_token.log 2>&1'
+            screen -dmS quant-api bash -c 'cd /root/quant && python3 api_server.py >> /root/quant/logs/api.log 2>&1'
+            screen -dmS quant-trade bash -c 'cd /root/quant && python3 strategy_engine.py >> /root/quant/logs/trade.log 2>&1'
+            sleep 3
+            screen -list
+            echo "✅ 量化系统部署完成"
