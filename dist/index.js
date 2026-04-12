@@ -1910,13 +1910,15 @@ async function getOpenBtcDenseArea(vsTokenId = 1) {
     return { success: false, data: [], msg: e.message };
   }
 }
-async function getOpenPriceMarketList(vsTokenId = 1) {
+async function getOpenPriceMarketList(vsTokenId = 1, limit = 100) {
   try {
     const endTime = Date.now();
     const json2 = await requestOpenApi("/open/v1/indicator/getPriceMarketList", { vsTokenId, endTime });
-    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+    const raw = json2?.data ?? [];
+    const data = Array.isArray(raw) ? raw.slice(0, limit) : raw;
+    return { success: true, data, total: Array.isArray(raw) ? raw.length : 0, msg: json2?.message ?? "ok" };
   } catch (e) {
-    return { success: false, data: [], msg: e.message };
+    return { success: false, data: [], total: 0, msg: e.message };
   }
 }
 async function getOpenAiAnalyseList(vsTokenId = 1) {
@@ -5855,7 +5857,7 @@ ${tradeStatus}
     // ── 手动 API Key 管理 ────────────────────────────────────────────────
     getApiKeyConfig: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
-      const vsKey = cfg?.vsApiKey;
+      const vsKey = cfg?.vsApiKey || process.env.VALUESCAN_API_KEY || process.env.VS_API_KEY || "";
       return {
         usingDbKey: !!vsKey,
         apiKeyPreview: vsKey ? `${vsKey.slice(0, 8)}...` : null
