@@ -2465,6 +2465,45 @@ export const appRouter = router({
         return { success: true, pnl, pnlPct };
       }),
   }),
+  // ─── 量化实盘系统代理 API ──────────────────────────────────────────────────
+  quant: router({
+    // 获取当前最优交易信号
+    signal: publicProcedure.query(async () => {
+      try {
+        const res = await fetch("http://47.239.72.211:3888/api/best", { signal: AbortSignal.timeout(8000) });
+        return { success: true, data: await res.json() };
+      } catch (e: any) {
+        return { success: false, data: null, error: e.message };
+      }
+    }),
+    // 获取系统运行状态
+    status: publicProcedure.query(async () => {
+      try {
+        const res = await fetch("http://47.239.72.211:3888/api/status", { signal: AbortSignal.timeout(8000) });
+        return { success: true, data: await res.json() };
+      } catch (e: any) {
+        return { success: false, data: null, error: e.message };
+      }
+    }),
+    // 获取交易历史
+    history: publicProcedure.query(async () => {
+      try {
+        const res = await fetch("http://47.239.72.211:3888/api/history", { signal: AbortSignal.timeout(8000) });
+        return { success: true, data: await res.json() };
+      } catch (e: any) {
+        return { success: false, data: [], error: e.message };
+      }
+    }),
+    // 一键启停交易系统
+    toggle: publicProcedure.mutation(async () => {
+      try {
+        const res = await fetch("http://47.239.72.211:3888/api/toggle", { signal: AbortSignal.timeout(8000) });
+        return { success: true, data: await res.json() };
+      } catch (e: any) {
+        return { success: false, data: null, error: e.message };
+      }
+    }),
+  }),
 });
 ;
 

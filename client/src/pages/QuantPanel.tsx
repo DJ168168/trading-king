@@ -1,21 +1,20 @@
 /**
  * 量化实盘面板
- * 接入阿里云服务器 47.239.72.211:3888 API
+ * 通过 tRPC 代理接入阿里云服务器 47.239.72.211:3888 API
  * 功能：实时信号、交易历史、系统状态、一键启停
  */
 import { useState, useEffect, useCallback } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, ArrowUpRight,
-  BarChart2, CheckCircle2, Clock, DollarSign,
+  BarChart2, CheckCircle2, Clock, Cpu,
   Flame, Pause, Play, RefreshCw, Server,
   Shield, TrendingDown, TrendingUp, XCircle, Zap,
-  Target, StopCircle, BarChart3, Cpu,
+  Target, StopCircle, BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-
-const API_BASE = "http://47.239.72.211:3888";
+import { trpc } from "@/lib/trpc";
 
 // ─── 类型定义 ─────────────────────────────────────────────────────────────────
 interface SignalData {
@@ -65,13 +64,25 @@ function fmtTime(ts: string) {
 }
 
 // ─── 信号卡片 ─────────────────────────────────────────────────────────────────
-function SignalCard({ data, loading }: { data: SignalData | null; loading: boolean }) {
-  if (loading || !data) {
+function SignalCard({ data, loading, error }: { data: SignalData | null; loading: boolean; error?: string }) {
+  if (loading) {
     return (
       <div className="rounded-xl border border-border/60 bg-card/80 p-6 animate-pulse">
         <div className="h-6 w-32 bg-muted rounded mb-4" />
         <div className="h-16 w-48 bg-muted rounded mb-4" />
         <div className="h-4 w-full bg-muted rounded" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6">
+        <div className="flex items-center gap-3 mb-3">
+          <AlertTriangle className="w-6 h-6 text-red-400" />
+          <p className="font-bold text-red-400">无法获取信号数据</p>
+        </div>
+        <p className="text-sm text-muted-foreground">{error || "服务器连接失败，请检查量化系统是否运行"}</p>
       </div>
     );
   }
@@ -148,7 +159,7 @@ function SignalCard({ data, loading }: { data: SignalData | null; loading: boole
 }
 
 // ─── 状态卡片 ─────────────────────────────────────────────────────────────────
-function StatusCard({ data, loading, onToggle }: { data: StatusData | null; loading: boolean; onToggle: () => void }) {
+function StatusCard({ data, loading, onToggle, toggling }: { data: StatusData | null; loading: boolean; onToggle: () => void; toggling: boolean }) {
   if (loading || !data) {
     return (
       <div className="rounded-xl border border-border/60 bg-card/80 p-6 animate-pulse">
@@ -217,6 +228,7 @@ function StatusCard({ data, loading, onToggle }: { data: StatusData | null; load
 
       <Button
         onClick={onToggle}
+        disabled={toggling}
         className={cn(
           "w-full font-bold",
           data.run
@@ -225,7 +237,9 @@ function StatusCard({ data, loading, onToggle }: { data: StatusData | null; load
         )}
         variant="outline"
       >
-        {data.run ? (
+        {toggling ? (
+          <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />操作中...</>
+        ) : data.run ? (
           <><Pause className="w-4 h-4 mr-2" />暂停交易系统</>
         ) : (
           <><Play className="w-4 h-4 mr-2" />启动交易系统</>
@@ -382,46 +396,48 @@ function TradeHistory({ records, loading }: { records: TradeRecord[]; loading: b
 
 // ─── 主页面 ───────────────────────────────────────────────────────────────────
 export default function QuantPanel() {
-  const [signal, setSignal] = useState<SignalData | null>(null);
-  const [status, setStatus] = useState<StatusData | null>(null);
-  const [history, setHistory] = useState<TradeRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchAll = useCallback(async () => {
-    try {
-      setError(null);
-      const [signalRes, statusRes, historyRes] = await Promise.all([
-        fetch(`${API_BASE}/api/best`).then(r => r.json()),
-        fetch(`${API_BASE}/api/status`).then(r => r.json()),
-        fetch(`${API_BASE}/api/history`).then(r => r.json()),
-      ]);
-      setSignal(signalRes);
-      setStatus(statusRes);
-      setHistory(Array.isArray(historyRes) ? historyRes : []);
-      setLastUpdate(new Date());
-    } catch (e) {
-      setError("无法连接到量化服务器，请检查服务状态");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const signalQuery = trpc.quant.signal.useQuery(undefined, {
+    refetchInterval: 30000,
+    retry: 2,
+  });
+  const statusQuery = trpc.quant.status.useQuery(undefined, {
+    refetchInterval: 30000,
+    retry: 2,
+  });
+  const historyQuery = trpc.quant.history.useQuery(undefined, {
+    refetchInterval: 30000,
+    retry: 2,
+  });
+  const toggleMutation = trpc.quant.toggle.useMutation({
+    onSuccess: () => {
+      statusQuery.refetch();
+    },
+  });
 
-  const handleToggle = useCallback(async () => {
-    try {
-      await fetch(`${API_BASE}/api/toggle`);
-      await fetchAll();
-    } catch {
-      setError("操作失败，请重试");
-    }
-  }, [fetchAll]);
+  const handleRefresh = useCallback(() => {
+    signalQuery.refetch();
+    statusQuery.refetch();
+    historyQuery.refetch();
+    setLastUpdate(new Date());
+    setRefreshKey(k => k + 1);
+  }, [signalQuery, statusQuery, historyQuery]);
 
   useEffect(() => {
-    fetchAll();
-    const timer = setInterval(fetchAll, 30000); // 30秒自动刷新
-    return () => clearInterval(timer);
-  }, [fetchAll]);
+    if (signalQuery.data || statusQuery.data) {
+      setLastUpdate(new Date());
+    }
+  }, [signalQuery.data, statusQuery.data]);
+
+  const signal = signalQuery.data?.success ? signalQuery.data.data as SignalData : null;
+  const status = statusQuery.data?.success ? statusQuery.data.data as StatusData : null;
+  const history = historyQuery.data?.success ? (historyQuery.data.data as TradeRecord[]) : [];
+  const isLoading = signalQuery.isLoading || statusQuery.isLoading;
+  const hasError = signalQuery.isError || statusQuery.isError ||
+    (signalQuery.data && !signalQuery.data.success) ||
+    (statusQuery.data && !statusQuery.data.success);
 
   return (
     <div className="space-y-6">
@@ -442,22 +458,25 @@ export default function QuantPanel() {
           <Button
             size="sm"
             variant="outline"
-            onClick={fetchAll}
+            onClick={handleRefresh}
+            disabled={isLoading}
             className="gap-2 border-primary/30 text-primary hover:bg-primary/10"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} />
             刷新
           </Button>
         </div>
       </div>
 
       {/* 错误提示 */}
-      {error && (
+      {hasError && !isLoading && (
         <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-4">
           <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
           <div>
             <p className="text-sm font-bold text-red-400">连接错误</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{error}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              无法连接到量化服务器（47.239.72.211:3888），请检查服务状态
+            </p>
           </div>
         </div>
       )}
@@ -466,11 +485,20 @@ export default function QuantPanel() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* 信号卡（占2列） */}
         <div className="lg:col-span-2">
-          <SignalCard data={signal} loading={loading} />
+          <SignalCard
+            data={signal}
+            loading={signalQuery.isLoading}
+            error={signalQuery.isError ? "服务器连接失败" : undefined}
+          />
         </div>
         {/* 状态卡 */}
         <div>
-          <StatusCard data={status} loading={loading} onToggle={handleToggle} />
+          <StatusCard
+            data={status}
+            loading={statusQuery.isLoading}
+            onToggle={() => toggleMutation.mutate()}
+            toggling={toggleMutation.isPending}
+          />
         </div>
       </div>
 
@@ -481,7 +509,7 @@ export default function QuantPanel() {
       </div>
 
       {/* 交易历史 */}
-      <TradeHistory records={history} loading={loading} />
+      <TradeHistory records={history} loading={historyQuery.isLoading} />
 
       {/* 底部说明 */}
       <div className="rounded-xl border border-border/40 bg-card/40 px-5 py-4">
