@@ -41,13 +41,13 @@ export interface TopPositionRatio {
   top_position_long_short_ratio: number;
 }
 
-export async function getGlobalLongShortRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<GlobalLongShortRatio[]> {
+export async function getGlobalLongShortRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24): Promise<GlobalLongShortRatio[]> {
   return cgFetchV4("/api/futures/global-long-short-account-ratio/history", { exchange, symbol, interval, limit });
 }
-export async function getTopAccountRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<TopAccountRatio[]> {
+export async function getTopAccountRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24): Promise<TopAccountRatio[]> {
   return cgFetchV4("/api/futures/top-long-short-account-ratio/history", { exchange, symbol, interval, limit });
 }
-export async function getTopPositionRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<TopPositionRatio[]> {
+export async function getTopPositionRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24): Promise<TopPositionRatio[]> {
   return cgFetchV4("/api/futures/top-long-short-position-ratio/history", { exchange, symbol, interval, limit });
 }
 
@@ -73,7 +73,7 @@ export interface LiquidationHistory {
 export async function getLiquidationCoinList(): Promise<LiquidationCoin[]> {
   return cgFetchV4("/api/futures/liquidation/coin-list");
 }
-export async function getLiquidationHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<LiquidationHistory[]> {
+export async function getLiquidationHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24): Promise<LiquidationHistory[]> {
   return cgFetchV4("/api/futures/liquidation/history", { exchange, symbol, interval, limit });
 }
 
@@ -85,7 +85,7 @@ export interface CVDHistory {
   buy_volume: number;
   sell_volume: number;
 }
-export async function getCVDHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24): Promise<CVDHistory[]> {
+export async function getCVDHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24): Promise<CVDHistory[]> {
   return cgFetchV4("/api/futures/taker-buy-sell-volume/history", { exchange, symbol, interval, limit });
 }
 
@@ -121,12 +121,12 @@ export interface CoinGlassPanelData {
 
 export async function getCoinGlassPanelData(): Promise<CoinGlassPanelData> {
   const [globalLS, topAccount, topPosition, liqCoins, liqHistory, cvd, etf, fg] = await Promise.allSettled([
-    getGlobalLongShortRatio("Binance", "BTCUSDT", "1h", 24),
-    getTopAccountRatio("Binance", "BTCUSDT", "1h", 24),
-    getTopPositionRatio("Binance", "BTCUSDT", "1h", 24),
+    getGlobalLongShortRatio("Binance", "BTCUSDT", "4h", 24),
+    getTopAccountRatio("Binance", "BTCUSDT", "4h", 24),
+    getTopPositionRatio("Binance", "BTCUSDT", "4h", 24),
     getLiquidationCoinList(),
-    getLiquidationHistory("Binance", "BTCUSDT", "1h", 24),
-    getCVDHistory("Binance", "BTCUSDT", "1h", 24),
+    getLiquidationHistory("Binance", "BTCUSDT", "4h", 24),
+    getCVDHistory("Binance", "BTCUSDT", "4h", 24),
     getBTCETFFlows(30),
     getFearGreedHistory(30),
   ]);

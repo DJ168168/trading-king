@@ -2860,22 +2860,22 @@ async function cgFetchV4(path2, params = {}) {
   if (json2.code !== "0") throw new Error(`CoinGlass error: ${json2.msg || "unknown"} (code=${json2.code})`);
   return json2.data;
 }
-async function getGlobalLongShortRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+async function getGlobalLongShortRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24) {
   return cgFetchV4("/api/futures/global-long-short-account-ratio/history", { exchange, symbol, interval, limit });
 }
-async function getTopAccountRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+async function getTopAccountRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24) {
   return cgFetchV4("/api/futures/top-long-short-account-ratio/history", { exchange, symbol, interval, limit });
 }
-async function getTopPositionRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+async function getTopPositionRatio(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24) {
   return cgFetchV4("/api/futures/top-long-short-position-ratio/history", { exchange, symbol, interval, limit });
 }
 async function getLiquidationCoinList() {
   return cgFetchV4("/api/futures/liquidation/coin-list");
 }
-async function getLiquidationHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+async function getLiquidationHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24) {
   return cgFetchV4("/api/futures/liquidation/history", { exchange, symbol, interval, limit });
 }
-async function getCVDHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "1h", limit = 24) {
+async function getCVDHistory(exchange = "Binance", symbol = "BTCUSDT", interval = "4h", limit = 24) {
   return cgFetchV4("/api/futures/taker-buy-sell-volume/history", { exchange, symbol, interval, limit });
 }
 async function getBTCETFFlows(limit = 30) {
@@ -2886,12 +2886,12 @@ async function getFearGreedHistory(limit = 30) {
 }
 async function getCoinGlassPanelData() {
   const [globalLS, topAccount, topPosition, liqCoins, liqHistory, cvd, etf, fg] = await Promise.allSettled([
-    getGlobalLongShortRatio("Binance", "BTCUSDT", "1h", 24),
-    getTopAccountRatio("Binance", "BTCUSDT", "1h", 24),
-    getTopPositionRatio("Binance", "BTCUSDT", "1h", 24),
+    getGlobalLongShortRatio("Binance", "BTCUSDT", "4h", 24),
+    getTopAccountRatio("Binance", "BTCUSDT", "4h", 24),
+    getTopPositionRatio("Binance", "BTCUSDT", "4h", 24),
     getLiquidationCoinList(),
-    getLiquidationHistory("Binance", "BTCUSDT", "1h", 24),
-    getCVDHistory("Binance", "BTCUSDT", "1h", 24),
+    getLiquidationHistory("Binance", "BTCUSDT", "4h", 24),
+    getCVDHistory("Binance", "BTCUSDT", "4h", 24),
     getBTCETFFlows(30),
     getFearGreedHistory(30)
   ]);
