@@ -606,7 +606,7 @@ export async function bootstrapValueScanService() {
 // ─── ValueScan Open API（HMAC-SHA256 签名）──────────────────────────────────
 import { createHmac } from "crypto";
 
-const OPEN_API_BASE = "https://api.valuescan.io";
+const OPEN_API_BASE = "https://api.valuescan.io/api";
 
 async function requestOpenApi(path: string, body: Record<string, any> = {}): Promise<any> {
   const { apiKey, secretKey } = await getVsCredentials();
