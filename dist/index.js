@@ -1360,6 +1360,18 @@ __export(valueScanService_exports, {
   getCoinSocialSentiment: () => getCoinSocialSentiment,
   getFearGreedIndex: () => getFearGreedIndex,
   getFundsCoinList: () => getFundsCoinList,
+  getOpenAiAnalyseList: () => getOpenAiAnalyseList,
+  getOpenBtcDenseArea: () => getOpenBtcDenseArea,
+  getOpenChanceCoinList: () => getOpenChanceCoinList,
+  getOpenChanceCoinMessages: () => getOpenChanceCoinMessages,
+  getOpenCoinTrade: () => getOpenCoinTrade,
+  getOpenFundsCoinList: () => getOpenFundsCoinList,
+  getOpenFundsCoinMessages: () => getOpenFundsCoinMessages,
+  getOpenLargeTradeList: () => getOpenLargeTradeList,
+  getOpenPriceMarketList: () => getOpenPriceMarketList,
+  getOpenRiskCoinList: () => getOpenRiskCoinList,
+  getOpenRiskCoinMessages: () => getOpenRiskCoinMessages,
+  getOpenSocialSentiment: () => getOpenSocialSentiment,
   getRiskCoinList: () => getRiskCoinList,
   getTokenList: () => getTokenList,
   getVSToken: () => getVSToken,
@@ -1373,6 +1385,7 @@ __export(valueScanService_exports, {
   startAutoRefreshTimer: () => startAutoRefreshTimer,
   stopAutoRefreshTimer: () => stopAutoRefreshTimer
 });
+import { createHmac as createHmac2 } from "crypto";
 function isTokenFresh() {
   return Boolean(userToken) && Date.now() - tokenSetAt < TOKEN_STALE_AFTER_MS;
 }
@@ -1844,7 +1857,125 @@ async function bootstrapValueScanService() {
   });
   return bootstrapPromise;
 }
-var TOKEN_REFRESH_INTERVAL_MS, TOKEN_STALE_AFTER_MS, FUNDS_MOVEMENT_TYPE_MAP, userToken, tokenSetAt, autoRefreshTimer, tokenRefreshPromise, bootstrapPromise, bootstrapStartedAt, backgroundSubscriptionsStarted, lastBootstrapError;
+async function requestOpenApi(path3, body = {}) {
+  const { apiKey, secretKey } = await getVsCredentials();
+  if (!apiKey) throw new Error("\u672A\u914D\u7F6E ValueScan API Key");
+  const rawBody = JSON.stringify(body);
+  const timestamp2 = String(Date.now());
+  const sign = createHmac2("sha256", secretKey || "").update(timestamp2 + rawBody).digest("hex");
+  const url = `${OPEN_API_BASE}${path3}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "X-API-KEY": apiKey,
+      "X-TIMESTAMP": timestamp2,
+      "X-SIGN": sign
+    },
+    body: rawBody
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+async function getOpenChanceCoinList() {
+  try {
+    const json2 = await requestOpenApi("/open/v1/ai/getChanceCoinList", {});
+    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], msg: e.message };
+  }
+}
+async function getOpenRiskCoinList() {
+  try {
+    const json2 = await requestOpenApi("/open/v1/ai/getRiskCoinList", {});
+    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], msg: e.message };
+  }
+}
+async function getOpenFundsCoinList() {
+  try {
+    const json2 = await requestOpenApi("/open/v1/ai/getFundsCoinList", {});
+    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], msg: e.message };
+  }
+}
+async function getOpenBtcDenseArea(vsTokenId = 1) {
+  try {
+    const json2 = await requestOpenApi("/open/v1/indicator/getDenseAreaList", { vsTokenId });
+    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], msg: e.message };
+  }
+}
+async function getOpenPriceMarketList(vsTokenId = 1) {
+  try {
+    const endTime = Date.now();
+    const json2 = await requestOpenApi("/open/v1/indicator/getPriceMarketList", { vsTokenId, endTime });
+    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], msg: e.message };
+  }
+}
+async function getOpenAiAnalyseList(vsTokenId = 1) {
+  try {
+    const json2 = await requestOpenApi("/open/v1/ai/getAiTokenAnalyseResultList", { vsTokenId });
+    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], msg: e.message };
+  }
+}
+async function getOpenLargeTradeList(vsTokenId = 1) {
+  try {
+    const json2 = await requestOpenApi("/open/v1/chain/trade/large", { vsTokenId });
+    return { success: true, data: json2?.data ?? [], msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], msg: e.message };
+  }
+}
+async function getOpenCoinTrade(vsTokenId = 1) {
+  try {
+    const json2 = await requestOpenApi("/open/v1/trade/getCoinTrade", { vsTokenId });
+    return { success: true, data: json2?.data ?? null, msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: null, msg: e.message };
+  }
+}
+async function getOpenSocialSentiment(symbol = "BTC", vsTokenId = 1) {
+  try {
+    const json2 = await requestOpenApi("/open/v1/social-sentiment/getCoinSocialSentiment", { vsTokenId });
+    return { success: true, data: json2?.data ?? null, msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: null, msg: e.message };
+  }
+}
+async function getOpenChanceCoinMessages(vsTokenId, symbol = "") {
+  try {
+    const json2 = await requestOpenApi("/open/v1/ai/getChanceCoinMessageList", { vsTokenId });
+    return { success: true, data: json2?.data ?? [], symbol, msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], symbol, msg: e.message };
+  }
+}
+async function getOpenRiskCoinMessages(vsTokenId, symbol = "") {
+  try {
+    const json2 = await requestOpenApi("/open/v1/ai/getRiskCoinMessageList", { vsTokenId });
+    return { success: true, data: json2?.data ?? [], symbol, msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], symbol, msg: e.message };
+  }
+}
+async function getOpenFundsCoinMessages(vsTokenId, symbol = "") {
+  try {
+    const json2 = await requestOpenApi("/open/v1/ai/getFundsCoinMessageList", { vsTokenId });
+    return { success: true, data: json2?.data ?? [], symbol, msg: json2?.message ?? "ok" };
+  } catch (e) {
+    return { success: false, data: [], symbol, msg: e.message };
+  }
+}
+var TOKEN_REFRESH_INTERVAL_MS, TOKEN_STALE_AFTER_MS, FUNDS_MOVEMENT_TYPE_MAP, userToken, tokenSetAt, autoRefreshTimer, tokenRefreshPromise, bootstrapPromise, bootstrapStartedAt, backgroundSubscriptionsStarted, lastBootstrapError, OPEN_API_BASE;
 var init_valueScanService = __esm({
   "server/valueScanService.ts"() {
     "use strict";
@@ -1884,6 +2015,7 @@ var init_valueScanService = __esm({
     bootstrapStartedAt = 0;
     backgroundSubscriptionsStarted = false;
     lastBootstrapError = "";
+    OPEN_API_BASE = "https://api.valuescan.io/api";
   }
 });
 
@@ -5757,6 +5889,21 @@ ${tradeStatus}
       return { success: true };
     })
   }),
+  // ─── ValueScan Open API 数据面板 ─────────────────────────────────────────────
+  vsOpenApi: router({
+    chanceCoinList: publicProcedure.query(async () => getOpenChanceCoinList()),
+    riskCoinList: publicProcedure.query(async () => getOpenRiskCoinList()),
+    fundsCoinList: publicProcedure.query(async () => getOpenFundsCoinList()),
+    btcDenseArea: publicProcedure.input(z2.object({ vsTokenId: z2.number().default(1) }).optional()).query(async ({ input }) => getOpenBtcDenseArea(input?.vsTokenId ?? 1)),
+    priceMarketList: publicProcedure.input(z2.object({ vsTokenId: z2.number().default(1) }).optional()).query(async ({ input }) => getOpenPriceMarketList(input?.vsTokenId ?? 1)),
+    aiAnalyseList: publicProcedure.input(z2.object({ vsTokenId: z2.number().default(1) }).optional()).query(async ({ input }) => getOpenAiAnalyseList(input?.vsTokenId ?? 1)),
+    largeTradeList: publicProcedure.input(z2.object({ vsTokenId: z2.number().default(1) }).optional()).query(async ({ input }) => getOpenLargeTradeList(input?.vsTokenId ?? 1)),
+    coinTrade: publicProcedure.input(z2.object({ vsTokenId: z2.number().default(1) }).optional()).query(async ({ input }) => getOpenCoinTrade(input?.vsTokenId ?? 1)),
+    socialSentiment: publicProcedure.input(z2.object({ symbol: z2.string().default("BTC") }).optional()).query(async ({ input }) => getOpenSocialSentiment(input?.symbol ?? "BTC")),
+    chanceCoinMessages: publicProcedure.input(z2.object({ vsTokenId: z2.number(), symbol: z2.string().default("") })).query(async ({ input }) => getOpenChanceCoinMessages(input.vsTokenId, input.symbol)),
+    riskCoinMessages: publicProcedure.input(z2.object({ vsTokenId: z2.number(), symbol: z2.string().default("") })).query(async ({ input }) => getOpenRiskCoinMessages(input.vsTokenId, input.symbol)),
+    fundsCoinMessages: publicProcedure.input(z2.object({ vsTokenId: z2.number(), symbol: z2.string().default("") })).query(async ({ input }) => getOpenFundsCoinMessages(input.vsTokenId, input.symbol))
+  }),
   // ─── 市场价格（通过 Binance 公开 API））─────────────────────────────────────
   market: router({
     price: publicProcedure.input(z2.object({ symbol: z2.string() })).query(async ({ input }) => {
@@ -5872,23 +6019,33 @@ ${tradeStatus}
         return { success: false, data: null, error: e.message };
       }
     }),
-    // 主力成本历史偏离度 - 基于当前数据模拟历史走势
+    // 主力成本历史偏离度 - 优先使用真实历史统计，无数据时回退模拟
     whaleCostDeviationHistory: publicProcedure.input(z2.object({ symbol: z2.string() })).query(async ({ input }) => {
       try {
+        const symbol = input.symbol.toUpperCase();
         const resp = await getFundsCoinList();
-        const found = (resp.data || []).find((item) => item.symbol.toUpperCase() === input.symbol.toUpperCase());
+        const found = (resp.data || []).find((item) => item.symbol.toUpperCase() === symbol);
         if (!found) return { success: false, data: [], error: "\u672A\u627E\u5230\u8BE5\u4EE3\u5E01\u6570\u636E" };
         const pushPrice = parseFloat(found.pushPrice ?? "0");
         const currentPrice = parseFloat(found.price ?? "0");
         const currentDeviation = pushPrice > 0 && currentPrice > 0 ? (currentPrice - pushPrice) / pushPrice * 100 : 0;
-        const gains = found.gains ?? 0;
+        const stats = await getVsSignalStats({ limit: 30 });
+        const realHistory = stats.filter((s) => s.symbol.toUpperCase() === symbol && s.pnlPct24h !== null).map((s) => ({
+          date: new Date(s.createdAt).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
+          ts: new Date(s.createdAt).getTime(),
+          deviation: parseFloat((s.pnlPct24h ?? 0).toFixed(2))
+        })).sort((a, b) => a.ts - b.ts);
+        if (realHistory.length >= 5) {
+          return { success: true, data: realHistory, currentDeviation: parseFloat(currentDeviation.toFixed(2)), pushPrice, currentPrice, isReal: true };
+        }
         const now = Date.now();
         const dayMs = 864e5;
+        const gains = found.gains ?? 0;
         const history = Array.from({ length: 30 }, (_, i) => {
           const daysAgo = 29 - i;
           const ts = now - daysAgo * dayMs;
-          const seed = (daysAgo * 7 + input.symbol.charCodeAt(0)) % 100;
-          const noise = Math.sin(seed * 0.7) * 8 + Math.cos(seed * 1.3) * 5;
+          const seed = (daysAgo * 7 + symbol.charCodeAt(0)) % 100;
+          const noise = Math.sin(seed * 0.7) * 5 + Math.cos(seed * 1.3) * 3;
           const startDev = gains - currentDeviation;
           const progress = i / 29;
           const trendDev = startDev * (1 - progress) + currentDeviation * progress;
@@ -5896,7 +6053,7 @@ ${tradeStatus}
           return { date: new Date(ts).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }), ts, deviation };
         });
         history[29].deviation = parseFloat(currentDeviation.toFixed(2));
-        return { success: true, data: history, currentDeviation: parseFloat(currentDeviation.toFixed(2)), pushPrice, currentPrice };
+        return { success: true, data: history, currentDeviation: parseFloat(currentDeviation.toFixed(2)), pushPrice, currentPrice, isReal: false };
       } catch (e) {
         return { success: false, data: [], error: e.message };
       }
@@ -6643,7 +6800,29 @@ ${tradeStatus}
       const d = await getDb();
       if (!d) return null;
       const rows = await d.select().from(paperAccount).where(eq4(paperAccount.id, 1)).limit(1);
-      return rows[0] ?? null;
+      if (rows[0]) return rows[0];
+      try {
+        console.log("[PaperTrading] \u5C1D\u8BD5\u521D\u59CB\u5316\u8D26\u6237 ID: 1");
+        await d.insert(paperAccount).values({
+          id: 1,
+          balance: 1e4,
+          totalBalance: 1e4,
+          initialBalance: 1e4,
+          peakBalance: 1e4,
+          autoTradingEnabled: false
+        });
+        console.log("[PaperTrading] \u63D2\u5165\u6210\u529F\uFF0C\u6B63\u5728\u91CD\u65B0\u67E5\u8BE2...");
+        const newRows = await d.select().from(paperAccount).where(eq4(paperAccount.id, 1)).limit(1);
+        console.log("[PaperTrading] \u91CD\u65B0\u67E5\u8BE2\u7ED3\u679C:", newRows[0] ? "\u6210\u529F" : "\u5931\u8D25");
+        return newRows[0] ?? null;
+      } catch (e) {
+        console.error("[PaperTrading] \u81EA\u52A8\u521D\u59CB\u5316\u5931\u8D25:", e.message);
+        if (e.message.includes("Duplicate entry")) {
+          const retryRows = await d.select().from(paperAccount).where(eq4(paperAccount.id, 1)).limit(1);
+          return retryRows[0] ?? null;
+        }
+        return null;
+      }
     }),
     // 获取当前持仓
     getPositions: publicProcedure.query(async () => {
