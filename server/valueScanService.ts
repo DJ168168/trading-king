@@ -689,10 +689,9 @@ export async function getOpenCoinTrade(vsTokenId = 1) {
   } catch (e: any) { return { success: false, data: null, msg: e.message }; }
 }
 
-export async function getOpenSocialSentiment(symbol = "BTC") {
+export async function getOpenSocialSentiment(symbol = "BTC", vsTokenId = 1) {
   try {
-    const normalized = symbol.replace(/USDT$/i, "").toUpperCase();
-    const json = await requestOpenApi("/open/v1/social-sentiment/getCoinSocialSentiment", { symbol: normalized });
+    const json = await requestOpenApi("/open/v1/social-sentiment/getCoinSocialSentiment", { vsTokenId });
     return { success: true, data: json?.data ?? null, msg: json?.message ?? "ok" };
   } catch (e: any) { return { success: false, data: null, msg: e.message }; }
 }
