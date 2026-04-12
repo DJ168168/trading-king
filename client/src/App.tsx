@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   TrendingUp,
   Waves,
+  Zap,
 } from "lucide-react";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Dashboard from "@/pages/Dashboard";
@@ -44,6 +45,7 @@ import ComponentShowcase from "@/pages/ComponentShowcase";
 import SignalResonance from "@/pages/SignalResonance";
 import VSDataPanel from "@/pages/VSDataPanel";
 import CoinGlassPanel from "@/pages/CoinGlassPanel";
+import QuantPanel from "@/pages/QuantPanel";
 import NotFound from "@/pages/NotFound";
 
 type NavItem = {
@@ -88,6 +90,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
           { href: "/positions", label: "持仓管理", icon: Database },
           { href: "/paper-trading", label: "模拟交易", icon: ShieldCheck },
           { href: "/quant-sim", label: "量化模拟", icon: Gauge },
+          { href: "/quant-panel", label: "量化实盘面板", icon: Zap },
           { href: "/live-trading", label: "实盘交易", icon: TrendingUp },
           { href: "/live-console", label: "实盘控制台", icon: Command },
           { href: "/vs-connect", label: "VS 连接", icon: Waves },
@@ -178,6 +181,7 @@ export default function App() {
           <Route path="/paper-trading" component={PaperTrading} />
           <Route path="/charts" component={Charts} />
           <Route path="/quant-sim" component={QuantSim} />
+          <Route path="/quant-panel" component={QuantPanel} />
           <Route path="/live-trading" component={LiveTrading} />
           <Route path="/live-console" component={LiveConsole} />
           <Route path="/vs-connect" component={VSConnect} />
