@@ -308,10 +308,6 @@ export default function VSDataPanel() {
     chanceDataKeys: chanceListQ.data ? Object.keys(chanceListQ.data as any).join(',') : 'null',
     chanceListLen: chanceList.length,
     chanceStatus: chanceListQ.status,
-    // fearGreed 对比
-    fgKeys: fearGreedQ.data ? Object.keys(fearGreedQ.data as any).join(',') : 'null',
-    fgStatus: fearGreedQ.status,
-    fgRaw: JSON.stringify(fearGreedQ.data)?.slice(0, 100),
   };
 
   return (
@@ -321,7 +317,6 @@ export default function VSDataPanel() {
         <div>DEBUG: loading={String(debugInfo.chanceLoading)} error={String(debugInfo.chanceError)} status={debugInfo.chanceStatus}</div>
         <div>data type={debugInfo.chanceDataType} keys={debugInfo.chanceDataKeys} listLen={debugInfo.chanceListLen}</div>
         <div>raw data: {JSON.stringify(chanceListQ.data)?.slice(0, 200)}</div>
-        <div>FG: status={debugInfo.fgStatus} keys={debugInfo.fgKeys} raw={debugInfo.fgRaw}</div>
       </div>
       {/* 页头 */}
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
