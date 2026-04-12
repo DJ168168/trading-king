@@ -770,7 +770,10 @@ export const appRouter = router({
     // ── 手动 API Key 管理 ────────────────────────────────────────────────
     getApiKeyConfig: publicProcedure.query(async () => {
       const cfg = await getActiveConfig();
-      const vsKey = (cfg as any)?.vsApiKey as string | undefined;
+      const vsKey = ((cfg as any)?.vsApiKey as string | undefined)
+        || process.env.VALUESCAN_API_KEY
+        || process.env.VS_API_KEY
+        || "";
       return {
         usingDbKey: !!vsKey,
         apiKeyPreview: vsKey ? `${vsKey.slice(0, 8)}...` : null,
