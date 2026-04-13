@@ -15,6 +15,7 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  Target,
   TrendingUp,
   Waves,
   Zap,
@@ -50,6 +51,7 @@ import CoinGlassPanel from "@/pages/CoinGlassPanel";
 import QuantPanel from "@/pages/QuantPanel";
 import MultiExchangeConsole from "@/pages/MultiExchangeConsole";
 import AutoRunPanel from "@/pages/AutoRunPanel";
+import HighWinRateStrategy from "@/pages/HighWinRateStrategy";
 import NotFound from "@/pages/NotFound";
 
 type NavItem = {
@@ -109,6 +111,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
         items: [
           { href: "/multi-exchange", label: "七所统一控制台", icon: Globe },
           { href: "/auto-run", label: "全自动运行面板", icon: Server },
+          { href: "/high-win-rate", label: "高胜率策略配置", icon: Target },
         ],
       },
 
@@ -202,6 +205,7 @@ export default function App() {
           <Route path="/showcase" component={ComponentShowcase} />
           <Route path="/multi-exchange" component={MultiExchangeConsole} />
           <Route path="/auto-run" component={AutoRunPanel} />
+          <Route path="/high-win-rate" component={HighWinRateStrategy} />
           <Route component={NotFound} />
         </Switch>
       </Shell>
