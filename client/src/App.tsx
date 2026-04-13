@@ -7,10 +7,12 @@ import {
   Command,
   Database,
   Gauge,
+  Globe,
   LayoutDashboard,
   Layers,
   Newspaper,
   Radar,
+  Server,
   Settings,
   ShieldCheck,
   TrendingUp,
@@ -46,6 +48,8 @@ import SignalResonance from "@/pages/SignalResonance";
 import VSDataPanel from "@/pages/VSDataPanel";
 import CoinGlassPanel from "@/pages/CoinGlassPanel";
 import QuantPanel from "@/pages/QuantPanel";
+import MultiExchangeConsole from "@/pages/MultiExchangeConsole";
+import AutoRunPanel from "@/pages/AutoRunPanel";
 import NotFound from "@/pages/NotFound";
 
 type NavItem = {
@@ -97,6 +101,14 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
           { href: "/vs-win-rate", label: "胜率统计", icon: BarChart3 },
           { href: "/settings", label: "系统设置", icon: Settings },
           { href: "/showcase", label: "组件展示", icon: LayoutDashboard },
+        ],
+      },
+
+      {
+        title: "全自动实盘",
+        items: [
+          { href: "/multi-exchange", label: "七所统一控制台", icon: Globe },
+          { href: "/auto-run", label: "全自动运行面板", icon: Server },
         ],
       },
 
@@ -188,6 +200,8 @@ export default function App() {
           <Route path="/vs-win-rate" component={VSWinRate} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/showcase" component={ComponentShowcase} />
+          <Route path="/multi-exchange" component={MultiExchangeConsole} />
+          <Route path="/auto-run" component={AutoRunPanel} />
           <Route component={NotFound} />
         </Switch>
       </Shell>
